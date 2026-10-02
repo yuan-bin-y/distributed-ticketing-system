@@ -20,3 +20,10 @@ spring:
               uri: lb://ticket-event-service
               predicates:
                 - Path=/api/events/**
+            - id: ticket-order-service
+              uri: lb://ticket-order-service
+              predicates:
+                - Path=/api/orders/**
+              metadata:
+                # 让订单服务有时间返回其依赖调用的超时响应；单位为毫秒。
+                response-timeout: 8000

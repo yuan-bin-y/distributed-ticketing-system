@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务和订单服务骨架。活动服务已接入 MySQL/Flyway 并实现活动查询；订单服务已具备独立启动与 Nacos 注册配置，服务间调用和交易功能按后续步骤实现。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务和订单服务。活动服务已接入 MySQL/Flyway 并实现活动查询与购票规则查询；订单服务已通过服务发现调用活动服务，实现购票预览。库存、真实订单和支付流程按后续步骤实现。
 
 ## 第一版目标
 
@@ -46,9 +46,9 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" package
 
 IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner JRE 设为 JDK 17，分别运行 `TicketEventApplication`、`TicketGatewayApplication`、`TicketOrderApplication`。停止命令行服务使用各窗口的 Ctrl+C。
 
-### 订单服务骨架
+### 订单服务
 
-订单服务默认端口为 `8062`，可通过 `ORDER_PORT` 覆盖。当前只引入 Web、Nacos 注册发现、LoadBalancer 和 `ticket-common`，尚未配置数据库，因此不需要 MySQL 环境变量。
+订单服务默认端口为 `8062`，可通过 `ORDER_PORT` 覆盖。当前引入 Web、RestClient、参数校验、Nacos 注册发现、LoadBalancer 和 `ticket-common`，尚未配置数据库，因此不需要 MySQL 环境变量。
 
 ```powershell
 & 'C:\Users\RE\.jdks\ms-17.0.20\bin\java.exe' -jar ticket-order-service/target/ticket-order-service-1.0-SNAPSHOT.jar
@@ -60,7 +60,7 @@ IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner
 {"service":"ticket-order-service","status":"ok"}
 ```
 
-Nacos 服务列表应出现健康的 `ticket-order-service` 实例。订单的网关路由、购票规则校验及调用活动服务的客户端将在下一阶段实现，目前通过订单服务端口直接验证。
+Nacos 服务列表应出现健康的 `ticket-order-service` 实例。网关通过 `lb://ticket-order-service` 转发 `/api/orders/**`，订单服务通过支持负载均衡的 RestClient 调用活动服务，购票预览用法见下文。
 
 ## 活动数据库与 Flyway
 
@@ -126,3 +126,27 @@ $env:LOCAL_MYSQL_PASSWORD = $dbCredential.GetNetworkCredential().Password
 通过现有 Mapper 查询票档、场次和活动，要求票档已启用、场次及活动已发布。票档 ID 非正整数或类型不正确返回 HTTP 400；资源不存在、票档禁用、场次未发布或取消、活动未发布或下线返回 HTTP 404。规则查询不检查当前是否开售，不预留库存，也不计算累计限购；这些校验与操作按后续业务步骤实现。
 
 重启活动服务后，直接访问 `http://localhost:8061/internal/ticket-tiers/{实际票档ID}/purchase-rule` 验证。使用演示数据时，可先在 `t_ticket_tier` 查询实际主键。现有网关路由只匹配 `/api/events/**`，不会转发该内部路径。`/internal` 只是接口用途约定，当前尚未增加服务身份校验，因此不代表通过活动服务端口访问时已经受到鉴权保护。
+
+## 订单预览与服务间调用
+
+启动 Nacos、活动服务、订单服务和网关后，向 `http://localhost:8060/api/orders/preview` 发送 POST 请求，Content-Type 为 `application/json`：
+
+```json
+{"ticketTierId": 3, "quantity": 2}
+```
+
+将 `3` 替换为实际启用票档 ID。`OrderController` 校验请求 DTO，调用 `OrderServiceImpl`；后者通过 `EventClient` 获取规则，按固定东八区校验开售时间及本次购买数量，使用 BigDecimal 计算金额，返回 `Result<OrderPreviewVO>`。开售区间为 `[saleStartTime, saleEndTime)`。若单价为 199.00 元、购买两张，`totalAmount` 为 398.00。预览不创建订单、不预留库存，也不检查用户累计已购数量；后续实际下单需要重新校验规则并接入库存及累计限购。
+
+`RestClientConfig` 创建标记为 `@LoadBalanced` 的 RestClient.Builder，保留 Boot 的 JSON 转换器，配置 JDK HTTP 连接及读取超时。`EventClient` 使用 `http://ticket-event-service/internal/ticket-tiers/{id}/purchase-rule`，由 DiscoveryClient 和 LoadBalancer 查找并选择实例；HTTP 请求直接发送到活动服务，不经过网关或 Nacos 服务器代理。订单服务只定义自己的 `TicketPurchaseRuleResponse` 契约，不依赖活动服务 Maven 模块或数据库。用法参见 [Spring Cloud 官方说明](https://docs.spring.io/spring-cloud-commons/reference/spring-cloud-commons/common-abstractions.html#spring-restclient-as-a-loadbalancer-client)。
+
+调用配置位于订单服务的 `ticket.clients.event`：`service-id` 默认 `ticket-event-service`，连接超时默认 2 秒，读取超时默认 5 秒，分别可用 `EVENT_CLIENT_CONNECT_TIMEOUT`、`EVENT_CLIENT_READ_TIMEOUT` 覆盖。当前不启用自动重试。网关订单路由的响应超时为 8 秒，给订单服务返回依赖超时错误留出时间；这些 HTTP 超时不等同于服务发现等所有处理步骤的总时限。
+
+| 场景 | HTTP 状态 / code |
+| --- | --- |
+| 非法参数、未开售、已停售、本次数量超限 | 400 / BAD_REQUEST |
+| 票档不存在、禁用或所属资源未发布 | 404 / RESOURCE_NOT_FOUND |
+| 找不到实例、连接失败、活动服务 5xx | 503 / UPSTREAM_UNAVAILABLE |
+| 活动服务调用超时 | 504 / UPSTREAM_TIMEOUT |
+| 响应无法解析、规则缺失、返回了其他票档规则 | 502 / INVALID_UPSTREAM_RESPONSE |
+
+订单请求的 traceId 通过 `X-Trace-Id` 传给活动服务，便于关联两个服务的响应及日志。已验证两个发现实例的负载均衡、开售边界、金额计算、参数校验、各类调用故障，以及独立测试端口与 Nacos 分组下的 Gateway → Order → Event → MySQL 链路；临时验证实例和数据库记录已清理。

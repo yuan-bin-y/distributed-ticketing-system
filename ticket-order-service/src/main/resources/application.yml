@@ -5,6 +5,16 @@ spring:
   application:
     name: ticket-order-service
   cloud:
+    loadbalancer:
+      retry:
+        enabled: false
     nacos:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+
+ticket:
+  clients:
+    event:
+      service-id: ticket-event-service
+      connect-timeout: ${EVENT_CLIENT_CONNECT_TIMEOUT:2s}
+      read-timeout: ${EVENT_CLIENT_READ_TIMEOUT:5s}
