@@ -118,3 +118,11 @@ $env:LOCAL_MYSQL_PASSWORD = $dbCredential.GetNetworkCredential().Password
 建表不会自动添加业务数据，空库查询返回 `total: 0` 和空列表。可在本地 SQL 控制台手动执行一次 [演示数据脚本](deploy/mysql/seed_event_demo.sql)，获得脚本返回的活动 ID 后查询详情和场次。演示脚本不属于 Flyway，重复执行会添加重复演示数据。
 
 重新启动活动服务和网关后，通过网关访问 `http://localhost:8060/api/events`，详情和场次 URL 中使用实际活动 ID。也可直接通过 `http://localhost:8061/api/events` 查询活动服务。
+
+### 内部购票规则查询
+
+活动服务提供 `GET /internal/ticket-tiers/{ticketTierId}/purchase-rule`，为后续订单服务调用准备。返回 `Result<TicketPurchaseRuleVO>`，包含 `eventId`、`sessionId`、`ticketTierId`、`ticketTierName`、`price`、`saleStartTime`、`saleEndTime`、`purchaseLimit`。票价使用 `BigDecimal`，开售时间按固定东八区解释。
+
+通过现有 Mapper 查询票档、场次和活动，要求票档已启用、场次及活动已发布。票档 ID 非正整数或类型不正确返回 HTTP 400；资源不存在、票档禁用、场次未发布或取消、活动未发布或下线返回 HTTP 404。规则查询不检查当前是否开售，不预留库存，也不计算累计限购；这些校验与操作按后续业务步骤实现。
+
+重启活动服务后，直接访问 `http://localhost:8061/internal/ticket-tiers/{实际票档ID}/purchase-rule` 验证。使用演示数据时，可先在 `t_ticket_tier` 查询实际主键。现有网关路由只匹配 `/api/events/**`，不会转发该内部路径。`/internal` 只是接口用途约定，当前尚未增加服务身份校验，因此不代表通过活动服务端口访问时已经受到鉴权保护。

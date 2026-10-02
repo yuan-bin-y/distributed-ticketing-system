@@ -5,6 +5,7 @@ import com.byy.ticket.event.dto.event.EventPageQueryDTO;
 import com.byy.ticket.event.vo.event.EventDetailVO;
 import com.byy.ticket.event.vo.event.EventListItemVO;
 import com.byy.ticket.event.vo.event.EventSessionVO;
+import com.byy.ticket.event.vo.event.TicketPurchaseRuleVO;
 
 import java.util.List;
 
@@ -15,4 +16,7 @@ public interface EventService {
     EventDetailVO getEvent(Long eventId);
 
     List<EventSessionVO> listSessions(Long eventId);
+
+    /** 查询启用票档及其已发布场次、活动的购票规则。 */
+    TicketPurchaseRuleVO getPurchaseRule(Long ticketTierId);
 }

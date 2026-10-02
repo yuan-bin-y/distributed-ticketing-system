@@ -16,6 +16,7 @@ import com.byy.ticket.event.vo.event.EventDetailVO;
 import com.byy.ticket.event.vo.event.EventListItemVO;
 import com.byy.ticket.event.vo.event.EventSessionVO;
 import com.byy.ticket.event.vo.event.TicketTierVO;
+import com.byy.ticket.event.vo.event.TicketPurchaseRuleVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -81,6 +82,34 @@ public class EventServiceImpl implements EventService {
                 session.getId(), session.getName(), session.getVenueName(), session.getVenueAddress(),
                 session.getStartTime(), session.getEndTime(), session.getSaleStartTime(), session.getSaleEndTime(),
                 session.getPurchaseLimit(), tiersBySession.getOrDefault(session.getId(), List.of()))).toList();
+    }
+
+    @Override
+    public TicketPurchaseRuleVO getPurchaseRule(Long ticketTierId) {
+        if (ticketTierId == null || ticketTierId < 1) {
+            throw new IllegalArgumentException("票档ID必须大于零");
+        }
+
+        // 1. 票档必须存在且已启用。
+        TicketTier tier = tierMapper.selectById(ticketTierId);
+        if (tier == null || !Integer.valueOf(1).equals(tier.getEnabled())) {
+            throw new ResourceNotFoundException("票档不存在或未启用");
+        }
+
+        // 2. 票档所属场次必须已发布。
+        EventSession session = sessionMapper.selectById(tier.getSessionId());
+        if (session == null || !PUBLISHED.equals(session.getStatus())) {
+            throw new ResourceNotFoundException("场次不存在或未发布");
+        }
+
+        // 3. 所属活动同样必须已发布。
+        Event event = requirePublishedEvent(session.getEventId());
+
+        // 4. 返回规则，开售时间和购买数量由后续订单服务校验。
+        return new TicketPurchaseRuleVO(
+                event.getId(), session.getId(), tier.getId(), tier.getName(), tier.getPrice(),
+                session.getSaleStartTime(), session.getSaleEndTime(), session.getPurchaseLimit()
+        );
     }
 
     private Event requirePublishedEvent(Long eventId) {

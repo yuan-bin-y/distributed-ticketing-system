@@ -91,3 +91,5 @@
 当前实施进度：已锁定 Boot 4.0.8、Cloud 2025.1.3、Alibaba 2025.1.0.0，父工程已聚合 ticket-common 基础模块及 Gateway、Event、Order 三个启动模块。Nacos 注册发现与 `lb://ticket-event-service` 转发已经验证。Event 已加入 MySQL 数据源与 Flyway V1 迁移，使用 `t_event`、`t_event_session`、`t_ticket_tier` 三张表；同服务内通过外键关联。时间按固定东八区 +08:00 保存，连接地址使用 %2B08:00 避免依赖 MySQL 命名时区表，票价为 DECIMAL，停售不晚于演出开始。默认连接地址已启用自动建库，迁移实际执行需要配置数据库凭证并启动服务；库不存在时账号需有创建数据库权限。活动查询已按电表项目习惯改为 Service 接口与 Impl、MyBatis-Plus Mapper、实体、查询 DTO 和响应 VO，统一使用 Result<PageVO<…>>、pageSize 参数及异常处理；已实现已发布活动分页、详情、场次及启用票档查询，数据库查询和独立端口的 HTTP 验证已通过；临时测试数据已回滚，演示数据脚本可手动执行。新查询接口还需在用户重启服务后通过网关验收。
 
 订单服务骨架已加入父工程，默认端口 8062，依赖 Web、Nacos Discovery、LoadBalancer 和 ticket-common。编译打包已通过，临时端口 18062 的连通接口和 Nacos 健康注册已验证，验证进程已停止。当前未接入订单数据库、购票规则远程调用和订单网关路由，下一阶段先完成 Order 调用 Event。
+
+活动服务已提供 GET /internal/ticket-tiers/{ticketTierId}/purchase-rule：按启用票档、已发布场次和已发布活动返回购票规则，非法 ID 返回 400，不存在或不可展示的资源返回 404。编译、真实数据库状态筛选及 HTTP 错误响应验证已通过，临时测试记录已回滚。接口不修改表结构；开售时间和数量的订单校验、Order 远程调用客户端仍待实现。内部接口尚未接入服务身份认证，现有网关未转发该路径。
