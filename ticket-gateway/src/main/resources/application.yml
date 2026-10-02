@@ -1,0 +1,22 @@
+server:
+  port: ${GATEWAY_PORT:8060}
+
+spring:
+  application:
+    name: ticket-gateway
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+    gateway:
+      server:
+        webflux:
+          httpclient:
+            connect-timeout: 2000
+            response-timeout: 5s
+          routes:
+            - id: ticket-event-service
+              # 按服务名发现实例，再由 LoadBalancer 选择转发目标。
+              uri: lb://ticket-event-service
+              predicates:
+                - Path=/api/events/**

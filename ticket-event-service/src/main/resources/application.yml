@@ -1,0 +1,19 @@
+server:
+  port: ${EVENT_PORT:8061}
+
+spring:
+  application:
+    name: ticket-event-service
+  datasource:
+    url: "${EVENT_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_event?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
+    username: ${LOCAL_MYSQL_USERNAME}
+    password: ${LOCAL_MYSQL_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+    validate-on-migrate: true
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
