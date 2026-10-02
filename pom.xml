@@ -17,8 +17,9 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <!-- 聚合构建两个独立启动的服务。 -->
+    <!-- 聚合公共基础模块与两个独立启动的服务。 -->
     <modules>
+        <module>ticket-common</module>
         <module>ticket-gateway</module>
         <module>ticket-event-service</module>
     </modules>
@@ -28,11 +29,27 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <spring-cloud.version>2025.1.3</spring-cloud.version>
         <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
+        <mybatis-plus.version>3.5.17</mybatis-plus.version>
     </properties>
 
     <!-- 导入版本清单；子模块仍须在自己的 dependencies 中引入所需组件。 -->
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.byy</groupId>
+                <artifactId>ticket-common</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-spring-boot4-starter</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.baomidou</groupId>
+                <artifactId>mybatis-plus-jsqlparser</artifactId>
+                <version>${mybatis-plus.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

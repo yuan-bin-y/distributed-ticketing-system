@@ -73,3 +73,32 @@ $env:LOCAL_MYSQL_PASSWORD = $dbCredential.GetNetworkCredential().Password
 时间字段按固定东八区 `+08:00` 保存，金额为 `DECIMAL(10,2)`，主键使用 `BIGINT AUTO_INCREMENT`。开售状态根据时间计算，不单独保存。场次停售时间不得晚于演出开始时间。已经执行的迁移文件不再修改，后续调整新增 `V2__...sql` 等版本。
 
 启动后在 `ticket_event` 查询 `SHOW TABLES` 和 `SELECT version, description, success FROM flyway_schema_history`，核对迁移是否完成。MySQL 驱动负责自动建库，Flyway 负责执行建表及后续迁移；对已有非空库不自动执行 baseline。
+
+## 活动查询
+
+查询沿用电表项目的 Controller → Service 接口 → ServiceImpl → Mapper 分层，使用 MyBatis-Plus 3.5.17、`BaseMapper`、`LambdaQueryWrapper` 和分页插件访问 MySQL。请求参数使用 DTO 和 Jakarta Validation，业务实体放在活动服务的 `model` 包，响应使用 `vo` 包下的 record。`ticket-common` 仅保存通用响应、分页结构、基础异常和 traceId 工具，不保存业务实体和 Mapper。Spring Boot 4 使用专用的 `mybatis-plus-spring-boot4-starter`，见 [官方安装说明](https://baomidou.com/getting-started/install/)。
+
+活动查询统一返回 `Result<T>`，字段为 `code`、`message`、`data`、`traceId`；成功 `code` 为 `OK`。异常由 `GlobalExceptionHandler` 转换成相同结构，并保留 HTTP 400、404、500 等状态。响应头 `X-Trace-Id` 与响应体一致。
+
+| 接口 | 功能 |
+| --- | --- |
+| `GET /api/events?page=1&pageSize=20` | 已发布活动列表，`data` 返回 `page`、`pageSize`、`total`、`records`；按创建时间和 ID 倒序排列 |
+| `GET /api/events/{eventId}` | 已发布活动详情 |
+| `GET /api/events/{eventId}/sessions` | 已发布场次及启用票档；场次按开始时间、ID 排列，票档按价格、ID 排列 |
+
+`page` 从 1 开始，默认 1；`pageSize` 为 1～100，默认 20，与电表项目保持一致，替换此前的 `size` 参数。非法参数返回 HTTP 400；字段校验错误在 `data` 中返回字段与错误说明。不存在或未发布的活动返回 HTTP 404。活动没有场次时 `data` 返回 `[]`；场次没有启用票档时保留场次，`ticketTiers` 返回 `[]`。票档按场次 ID 批量查询，避免逐场查询。启用票档表示可展示，不代表有库存或当前可购买。
+
+空列表响应示例：
+
+```json
+{
+  "code": "OK",
+  "message": "success",
+  "data": {"records": [], "total": 0, "page": 1, "pageSize": 20},
+  "traceId": "本次请求的32位十六进制追踪标识"
+}
+```
+
+建表不会自动添加业务数据，空库查询返回 `total: 0` 和空列表。可在本地 SQL 控制台手动执行一次 [演示数据脚本](deploy/mysql/seed_event_demo.sql)，获得脚本返回的活动 ID 后查询详情和场次。演示脚本不属于 Flyway，重复执行会添加重复演示数据。
+
+重新启动活动服务和网关后，通过网关访问 `http://localhost:8060/api/events`，详情和场次 URL 中使用实际活动 ID。也可直接通过 `http://localhost:8061/api/events` 查询活动服务。

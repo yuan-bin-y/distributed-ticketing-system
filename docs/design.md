@@ -88,4 +88,4 @@
 3. **支付闭环**：Auth、模拟 Payment、Outbox/MQ、出票及迟到支付补偿。
 4. **治理与证明**：限流、故障隔离、监控追踪、并发与故障测试，形成可复现的结果报告。
 
-当前实施进度：已锁定 Boot 4.0.8、Cloud 2025.1.3、Alibaba 2025.1.0.0，父工程已聚合 Gateway 与 Event 两个启动模块。Nacos 注册发现与 `lb://ticket-event-service` 转发已经验证。Event 已加入 MySQL 数据源与 Flyway V1 迁移，使用 `t_event`、`t_event_session`、`t_ticket_tier` 三张表；同服务内通过外键关联。时间按固定东八区 +08:00 保存，连接地址使用 %2B08:00 避免依赖 MySQL 命名时区表，票价为 DECIMAL，停售不晚于演出开始。默认连接地址已启用自动建库，迁移实际执行需要配置数据库凭证并启动服务；库不存在时账号需有创建数据库权限。里程碑 1 还需实现数据库活动查询。
+当前实施进度：已锁定 Boot 4.0.8、Cloud 2025.1.3、Alibaba 2025.1.0.0，父工程已聚合 ticket-common 基础模块及 Gateway、Event 两个启动模块。Nacos 注册发现与 `lb://ticket-event-service` 转发已经验证。Event 已加入 MySQL 数据源与 Flyway V1 迁移，使用 `t_event`、`t_event_session`、`t_ticket_tier` 三张表；同服务内通过外键关联。时间按固定东八区 +08:00 保存，连接地址使用 %2B08:00 避免依赖 MySQL 命名时区表，票价为 DECIMAL，停售不晚于演出开始。默认连接地址已启用自动建库，迁移实际执行需要配置数据库凭证并启动服务；库不存在时账号需有创建数据库权限。活动查询已按电表项目习惯改为 Service 接口与 Impl、MyBatis-Plus Mapper、实体、查询 DTO 和响应 VO，统一使用 Result<PageVO<…>>、pageSize 参数及异常处理；已实现已发布活动分页、详情、场次及启用票档查询，数据库查询和独立端口的 HTTP 验证已通过；临时测试数据已回滚，演示数据脚本可手动执行。新查询接口还需在用户重启服务后通过网关验收。
