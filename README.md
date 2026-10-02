@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前已建立网关和活动服务的最小启动模块，接入 Nacos 注册发现，并加入活动服务的 MySQL 数据源与 Flyway 建表迁移；活动查询与交易功能按后续步骤实现。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务和订单服务骨架。活动服务已接入 MySQL/Flyway 并实现活动查询；订单服务已具备独立启动与 Nacos 注册配置，服务间调用和交易功能按后续步骤实现。
 
 ## 第一版目标
 
@@ -12,7 +12,7 @@
 
 ## 当前工程与启动
 
-父工程负责聚合和依赖版本管理，两个子模块各自拥有启动类、配置和可执行 JAR。Gateway 使用 WebFlux/Netty，活动服务使用 Spring MVC/Tomcat；活动服务的测试接口为 `GET /api/events/ping`。
+父工程负责聚合和依赖版本管理，网关、活动服务和订单服务各自拥有启动类、配置和可执行 JAR；`ticket-common` 是公共代码库，不单独启动。Gateway 使用 WebFlux/Netty，活动与订单服务使用 Spring MVC/Tomcat。
 
 要求 JDK 17 或更新版本、Maven 3.9。先在项目根目录构建（命令中的本地仓库与本项目验证使用的仓库一致）：
 
@@ -22,9 +22,9 @@ $env:JAVA_HOME = 'C:\Users\RE\.jdks\ms-17.0.20'
 mvn "-Dmaven.repo.local=$PWD/target/.m2" package
 ```
 
-先按 [Nacos 3.x 官方入门文档](https://nacos.io/docs/v3.1/quickstart/quick-start/) 启动单机 Nacos。两个应用默认连接 `127.0.0.1:8848`，客户端还需要能访问其 gRPC 端口 `9848`。Nacos 3.x 的控制台通常位于 `http://localhost:8080/index.html`，不是应用配置中的服务地址。当前代码只接入注册发现，还没有接入配置中心。
+先按 [Nacos 3.x 官方入门文档](https://nacos.io/docs/v3.1/quickstart/quick-start/) 启动单机 Nacos。三个应用默认连接 `127.0.0.1:8848`，客户端还需要能访问其 gRPC 端口 `9848`。Nacos 3.x 的控制台通常位于 `http://localhost:8080/index.html`，不是应用配置中的服务地址。当前代码只接入注册发现，还没有接入配置中心。
 
-若 Nacos 地址不同，在启动两个应用的窗口中设置相同的 `NACOS_SERVER_ADDR`。若开启了 Nacos 客户端鉴权，还需设置 `SPRING_CLOUD_NACOS_DISCOVERY_USERNAME` 和 `SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD`，使用该 Nacos 实例的账号密码。
+若 Nacos 地址不同，在启动各应用的窗口中设置相同的 `NACOS_SERVER_ADDR`。若开启了 Nacos 客户端鉴权，还需设置 `SPRING_CLOUD_NACOS_DISCOVERY_USERNAME` 和 `SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD`，使用该 Nacos 实例的账号密码。
 
 活动服务启动前还需完成下面的数据库准备。Nacos 和数据库就绪后，在两个 PowerShell 窗口中分别从项目根目录启动：
 
@@ -44,7 +44,23 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" package
 
 网关按 `/api/events/**` 匹配请求，保留原路径；通过 `lb://ticket-event-service` 从 Nacos 发现实例并进行负载均衡。需要换端口时使用 `EVENT_PORT`、`GATEWAY_PORT`，活动服务重新注册实际端口，网关不再配置它的固定地址。
 
-IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner JRE 设为 JDK 17，分别运行 `TicketEventApplication`、`TicketGatewayApplication`。停止命令行服务使用各窗口的 Ctrl+C。
+IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner JRE 设为 JDK 17，分别运行 `TicketEventApplication`、`TicketGatewayApplication`、`TicketOrderApplication`。停止命令行服务使用各窗口的 Ctrl+C。
+
+### 订单服务骨架
+
+订单服务默认端口为 `8062`，可通过 `ORDER_PORT` 覆盖。当前只引入 Web、Nacos 注册发现、LoadBalancer 和 `ticket-common`，尚未配置数据库，因此不需要 MySQL 环境变量。
+
+```powershell
+& 'C:\Users\RE\.jdks\ms-17.0.20\bin\java.exe' -jar ticket-order-service/target/ticket-order-service-1.0-SNAPSHOT.jar
+```
+
+在 IDEA 中运行 `com.byy.ticket.order.TicketOrderApplication`，模块选择 `ticket-order-service`。访问 `http://localhost:8062/api/orders/ping` 应返回：
+
+```json
+{"service":"ticket-order-service","status":"ok"}
+```
+
+Nacos 服务列表应出现健康的 `ticket-order-service` 实例。订单的网关路由、购票规则校验及调用活动服务的客户端将在下一阶段实现，目前通过订单服务端口直接验证。
 
 ## 活动数据库与 Flyway
 

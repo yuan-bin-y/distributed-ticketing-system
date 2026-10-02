@@ -17,11 +17,12 @@
     <version>1.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <!-- 聚合公共基础模块与两个独立启动的服务。 -->
+    <!-- 聚合公共基础模块与各个独立启动的服务。 -->
     <modules>
         <module>ticket-common</module>
         <module>ticket-gateway</module>
         <module>ticket-event-service</module>
+        <module>ticket-order-service</module>
     </modules>
 
     <properties>
