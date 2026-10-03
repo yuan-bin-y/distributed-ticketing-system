@@ -5,6 +5,9 @@ import com.byy.ticket.common.result.ApiErrorCode;
 import com.byy.ticket.common.result.Result;
 import com.byy.ticket.order.client.exception.EventServiceCallException;
 import com.byy.ticket.order.client.exception.InventoryServiceCallException;
+import com.byy.ticket.order.exception.OrderConflictException;
+import com.byy.ticket.order.exception.OrderIdentityException;
+import org.springframework.dao.TransientDataAccessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -26,6 +29,28 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+    /** 没有可信身份时返回 401；开发身份必须显式开启，不能默认冒用用户编号。 */
+    @ExceptionHandler(OrderIdentityException.class)
+    @ResponseStatus(HttpStatus.UNAUTHORIZED)
+    public Result<Void> handleIdentity(OrderIdentityException exception) {
+        return Result.failure(ApiErrorCode.UNAUTHORIZED, exception.getMessage());
+    }
+
+    /** 同一购买幂等键提交不同内容时返回 409。 */
+    @ExceptionHandler(OrderConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Result<Void> handleOrderConflict(OrderConflictException exception) {
+        return Result.failure(ApiErrorCode.CONFLICT, exception.getMessage());
+    }
+
+    /** 暂时性数据库失败返回 503，客户端应保持原购买幂等键重试。 */
+    @ExceptionHandler(TransientDataAccessException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleStorageBusy(TransientDataAccessException exception) {
+        log.warn("订单数据库暂时不可用", exception);
+        return Result.failure(ApiErrorCode.SERVICE_BUSY, "订单处理中，请保持原购买幂等键核对或重试");
+    }
 
     /**
      * 将 Bean Validation 的字段错误转换为 HTTP 400，返回字段名和具体提示。

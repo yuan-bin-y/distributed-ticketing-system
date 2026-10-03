@@ -4,6 +4,15 @@ server:
 spring:
   application:
     name: ticket-order-service
+  datasource:
+    url: "${ORDER_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_order?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
+    username: ${LOCAL_MYSQL_USERNAME}
+    password: ${LOCAL_MYSQL_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+    validate-on-migrate: true
   cloud:
     loadbalancer:
       retry:
@@ -13,6 +22,16 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  order:
+    # Auth 接入前，仅在本地显式开启；接受 X-Dev-User-Id，不作为生产认证。
+    dev-identity-enabled: ${ORDER_DEV_IDENTITY_ENABLED:false}
+    payment-window: ${ORDER_PAYMENT_WINDOW:15m}
+    recovery-delay-ms: ${ORDER_RECOVERY_DELAY_MS:5000}
+    recovery-enabled: ${ORDER_RECOVERY_ENABLED:true}
+    batch-size: 20
+    lease-duration: 30s
+    retry-base: 5s
+    retry-max: 5m
   clients:
     event:
       service-id: ticket-event-service

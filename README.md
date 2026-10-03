@@ -2,7 +2,17 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务和库存服务。活动服务提供活动查询与购票规则；订单服务通过服务发现调用活动服务进行预览，并通过内部预留入口调用库存服务；库存服务实现数据库预留、确认售出和释放。真实订单、累计限购和支付流程按后续步骤实现。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务和库存服务。活动服务提供活动查询与购票规则；订单服务已提供订单落库、购买幂等、查询、库存预留与后台核对、未支付到期释放；库存服务实现数据库预留、确认售出和释放。Auth、累计限购、模拟支付、Outbox/MQ 按后续步骤实现。下单代码阅读顺序见 [订单创建与恢复](docs/order-workflow.md)。
+
+## 订单下单与恢复
+
+正式入口为 `POST /api/orders` 和 `GET /api/orders/{orderNo}`。创建请求为 `ticketTierId`、`quantity`、`idempotencyKey`。订单服务先校验活动规则，在本地事务中保存主表和购买快照，再在事务外调用库存；不确定结果保留 `STOCK_PENDING`，后台沿用原参数核对。预留成功进入待支付；未支付到期订单先进入 `CLOSING`，确认释放后 `CLOSED`。库存已售出等异常终态进入 `REVIEW_REQUIRED`，不自动释放。
+
+Auth 尚未接入，新入口默认需要可信身份。仅本地学习可设置 `ORDER_DEV_IDENTITY_ENABLED=true`，重新启动后在请求中传 `X-Dev-User-Id: 1`。用户身份不放入下单 JSON。开发身份不是生产认证。完整请求、状态解释、事务边界、租约与重试配置见 [订单创建与恢复](docs/order-workflow.md)。
+
+本阶段的故障验证脚本为 `deploy/verify/verify_order_workflow.ps1`：使用真实 MySQL、独立订单/库存进程、活动 HTTP 桩和库存响应故障代理，验证幂等、并发、事务回滚、响应丢失、服务重启和到期释放。测试只使用随机测试库，结束后清理自身库和进程。
+
+本阶段通过 75 项下单流程检查及原客户端 153 项回归检查；正式订单库会在下一次启动订单服务时迁移，未写业务演示订单。网关订单路由超时调整为 30 秒，覆盖串行依赖调用的等待时间。
 
 ## 第一版目标
 
@@ -48,7 +58,7 @@ IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner
 
 ### 订单服务
 
-订单服务默认端口为 `8062`，可通过 `ORDER_PORT` 覆盖。当前引入 Web、RestClient、参数校验、Nacos 注册发现、LoadBalancer 和 `ticket-common`，尚未配置数据库，因此不需要 MySQL 环境变量。
+订单服务默认端口为 `8062`，可通过 `ORDER_PORT` 覆盖。已引入 MyBatis-Plus、MySQL 与 Flyway，启动时使用统一的 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`，自动创建 `ticket_order` 库及订单主表、订单项、Flyway 历史表。`ORDER_DB_URL` 可覆盖连接地址；默认时间为固定东八区。Web、RestClient、Nacos、LoadBalancer 和 `ticket-common` 继续使用。
 
 ```powershell
 & 'C:\Users\RE\.jdks\ms-17.0.20\bin\java.exe' -jar ticket-order-service/target/ticket-order-service-1.0-SNAPSHOT.jar
@@ -220,7 +230,7 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-inventory-service -am packag
 | 数据库锁竞争或临时访问故障 | 503 / SERVICE_BUSY |
 | 非预期错误、记录与计数不一致 | 500 / INTERNAL_ERROR |
 
-当前没有仅凭 `expiresAt` 自动释放的任务；后续需要核对订单状态。订单预览继续只做预览；订单服务已通过内部预留入口调用库存，正式下单流程按后续步骤实现。
+库存服务自身不按到期时间自动释放。正式创建的订单由订单服务核对状态并协调到期释放；原内部演示预留不落订单表，因此不进入订单的到期任务。订单预览继续只做预览。
 
 ### 复现验证
 
@@ -273,7 +283,7 @@ InternalOrderStockController
 
 响应为 `Result<OrderStockReservationVO>`，返回实际预留 ID、订单关联编号、场次、票档、数量、到期时间和状态。重复请求保持完全相同的 JSON 参数，包括到期时间；当前状态可能是 RESERVED、SOLD 或 RELEASED，终态结果不会重新扣库存。
 
-这是内部库存协作接口，当前没有创建订单、检查活动规则或认证用户。正式下单会组合活动规则校验、库存预留和订单落库；确认/释放客户端方法供后续支付及取消流程使用。网关不转发此内部路径，`/api/orders/preview` 不会预留库存。当前内部路径尚未接入服务身份校验。
+这是原内部库存协作接口，不创建订单、不检查活动规则或认证用户；正式下单使用下文的 `POST /api/orders`。网关不转发此内部路径，`/api/orders/preview` 不会预留库存。当前内部路径尚未接入服务身份校验。
 
 符合契约的库存 400/404/409 分别保留为参数错误、资源不存在和业务冲突；依赖不可用返回 503，超时返回 504，响应字段/状态不一致或异常重定向返回 502。请求的 traceId 会传到库存服务。
 
@@ -299,6 +309,6 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl 'ticket-order-service,ticket-invent
 & ./deploy/verify/verify_order_inventory_chain.ps1 -JavaHome 'C:\Users\RE\.jdks\ms-17.0.20'
 ```
 
-真实验证在独立端口和临时 Nacos 分组启动服务，只生成自身测试库存记录，结束后清理这些记录及验证进程。测试不会添加业务演示库存或创建订单表。
+此调用链验证在独立端口和临时 Nacos 分组启动服务，只生成自身测试库存记录，结束后清理这些记录及验证进程。订单服务启动会执行订单库迁移；原内部预留验证不写订单业务记录，也不添加业务演示库存。
 
 本步骤验证已通过：153 项客户端检查涵盖两实例负载均衡、四个调用方法、JSON 序列化、traceId、参数/状态响应核对、业务错误码、重定向、响应头/正文超时、不自动重试及活动预览回归；真实跨进程调用链完成 134 项检查，覆盖重复预留、库存不足、冲突和已售/已释放记录重试，并核对 MySQL 数量。临时记录和验证进程已清理。正文读取超时通过底层请求工厂保留超时异常原因，返回 504，格式错误仍为 502。

@@ -4,7 +4,7 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * 订单服务启动入口：提供订单预览和内部库存预留调用，当前尚未创建订单表。
+ * 订单服务启动入口：提供订单创建、查询、预览以及库存协作，独立管理订单数据库。
  */
 @SpringBootApplication
 public class TicketOrderApplication {

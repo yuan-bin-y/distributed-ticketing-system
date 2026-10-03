@@ -1,4 +1,18 @@
-import com.byy.ticket.order.TicketOrderApplication;
+import com.byy.ticket.order.client.EventClient;
+import com.byy.ticket.order.config.RestClientConfig;
+import com.byy.ticket.order.config.OrderClockConfig;
+import com.byy.ticket.order.config.OrderWorkflowProperties;
+import com.byy.ticket.order.controller.OrderController;
+import com.byy.ticket.order.controller.InternalOrderStockController;
+import com.byy.ticket.order.service.impl.OrderServiceImpl;
+import com.byy.ticket.order.web.OrderIdentityResolver;
+import com.byy.ticket.order.web.filter.TraceIdFilter;
+import com.byy.ticket.order.web.handler.GlobalExceptionHandler;
+import org.springframework.boot.SpringBootConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import java.time.Clock;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.dto.StockReservationRequest;
 import com.byy.ticket.order.client.dto.StockReservationResponse;
@@ -31,6 +45,28 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /** Real HTTP and Spring LoadBalancer verification; stubs replace Nacos and MySQL. */
 public class InventoryClientVerification {
+    /** 此验证只覆盖 HTTP 客户端、内部预留和预览；正式订单数据库由 workflow 验证覆盖。 */
+    @SpringBootConfiguration
+    @EnableAutoConfiguration(excludeName = {
+            "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
+            "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
+            "com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration"})
+    @Import({RestClientConfig.class, OrderClockConfig.class, EventClient.class, InventoryClient.class,
+            InternalOrderStockController.class, OrderController.class, OrderIdentityResolver.class,
+            TraceIdFilter.class, GlobalExceptionHandler.class})
+    public static class ClientOnlyApplication {
+        @Bean
+        OrderWorkflowProperties properties() {
+            return new OrderWorkflowProperties(false, null, false, null, null, null, null);
+        }
+
+        /** 不构建数据库和恢复组件；本测试不调用 create/getOrder。 */
+        @Bean
+        OrderServiceImpl orderService(EventClient event, InventoryClient inventory, Clock clock,
+                                      OrderWorkflowProperties properties) {
+            return new OrderServiceImpl(event, inventory, clock, null, null, null, null, properties);
+        }
+    }
     private static final String TRACE = "0123456789abcdef0123456789abcdef";
     private static final String RESERVATION_ID = "11111111111111111111111111111111";
     private static final LocalDateTime EXPIRY = LocalDateTime.parse("2030-01-01T12:15:00.123");
@@ -50,7 +86,7 @@ public class InventoryClientVerification {
         HttpServer a = inventoryStub("instance-a", executor);
         HttpServer b = inventoryStub("instance-b", executor);
         HttpServer event = eventStub(executor);
-        try (var context = SpringApplication.run(TicketOrderApplication.class,
+        try (var context = SpringApplication.run(ClientOnlyApplication.class,
                 "--server.port=0", "--spring.cloud.nacos.discovery.enabled=false",
                 "--logging.level.root=ERROR", "--spring.main.banner-mode=off",
                 "--ticket.clients.inventory.connect-timeout=1s",

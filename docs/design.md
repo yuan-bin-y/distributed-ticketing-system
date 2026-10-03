@@ -2,6 +2,8 @@
 
 本文件先固定学习项目的业务范围与关键规则。实现过程中如需改变服务边界或交易语义，先更新本文件，再修改代码。
 
+当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。认证、用户累计限购、支付、Outbox/MQ 仍未实现；下文保留各历史阶段的验证记录。
+
 ## 1. 目标与范围
 
 面向演唱会、体育赛事等活动，实现按**场次 + 票档**购买的最小交易闭环：
@@ -92,7 +94,7 @@
 
 订单服务新增 `InventoryClient`，通过 RestClient、Nacos 和 LoadBalancer 按服务名调用库存服务的预留、确认、释放和预留查询接口。订单服务定义自己的请求/响应契约，不依赖库存模块和数据库。Event、Inventory 使用各自有明确名称的 HTTP Builder，独立配置连接/读取超时，均不自动重试。
 
-新增 `POST /internal/orders/stock-reservations` → `OrderService.reserveStock` → `InventoryClient.reserve`，让库存调用真实经过订单业务层。该接口是服务内部库存协作入口，接收稳定的 `orderId`、`sessionId`、`ticketTierId`、`quantity`、`expiresAt`，返回预留结果；现阶段不创建订单、不检查活动规则或用户身份。正式下单的活动校验、编号生成、累计限购和订单持久化按后续步骤实现，已有 `/api/orders/preview` 继续只做预览。网关不新增内部路由。
+新增 `POST /internal/orders/stock-reservations` → `OrderService.reserveStock` → `InventoryClient.reserve`，让库存调用真实经过订单业务层。该接口是服务内部库存协作入口，接收稳定的 `orderId`、`sessionId`、`ticketTierId`、`quantity`、`expiresAt`，返回预留结果；此内部演示接口不创建订单、不检查活动规则或用户身份。正式下单已在后续阶段使用独立的 `POST /api/orders`，累计限购仍待实现，已有 `/api/orders/preview` 继续只做预览。网关不新增内部路由。
 
 客户端校验成功响应的预留 ID、订单编号、场次、票档、数量、到期时间和状态。预留重试允许返回原记录的 RESERVED、SOLD 或 RELEASED；确认只接受 SOLD，释放只接受 RELEASED。库存符合契约的 400/404/409 作为参数、资源及业务冲突处理；不可用、超时、错误契约分别返回 503/504/502。重定向不作为成功。超时或连接失败可能发生在库存提交之后，不自动释放，也不把调用失败当作库存未变更；调用方需沿用同一编号及全部参数重试，或通过已知预留 ID 核对状态。
 
@@ -112,7 +114,7 @@
 
 当前实施进度：已锁定 Boot 4.0.8、Cloud 2025.1.3、Alibaba 2025.1.0.0，父工程已聚合 ticket-common 基础模块及 Gateway、Event、Order、Inventory 四个启动模块。Nacos 注册发现与 `lb://ticket-event-service` 转发已经验证。Event 已加入 MySQL 数据源与 Flyway V1 迁移，使用 `t_event`、`t_event_session`、`t_ticket_tier` 三张表；同服务内通过外键关联。时间按固定东八区 +08:00 保存，连接地址使用 %2B08:00 避免依赖 MySQL 命名时区表，票价为 DECIMAL，停售不晚于演出开始。默认连接地址已启用自动建库，迁移实际执行需要配置数据库凭证并启动服务；库不存在时账号需有创建数据库权限。活动查询已按电表项目习惯改为 Service 接口与 Impl、MyBatis-Plus Mapper、实体、查询 DTO 和响应 VO，统一使用 Result<PageVO<…>>、pageSize 参数及异常处理；已实现已发布活动分页、详情、场次及启用票档查询，数据库查询和独立端口的 HTTP 验证已通过；临时测试数据已回滚，演示数据脚本可手动执行。新查询接口还需在用户重启服务后通过网关验收。
 
-订单服务骨架已加入父工程，默认端口 8062，依赖 Web、Nacos Discovery、LoadBalancer 和 ticket-common。编译打包已通过，临时端口 18062 的连通接口和 Nacos 健康注册已验证，验证进程已停止。订单数据库与真实交易流程尚未接入，远程调用和网关路由已在后续步骤完成。
+订单服务骨架阶段（历史）：默认端口 8062，依赖 Web、Nacos Discovery、LoadBalancer 和 ticket-common。编译打包已通过，临时端口 18062 的连通接口和 Nacos 健康注册已验证，验证进程已停止。该阶段尚无订单数据库；远程调用、网关路由及订单落库已在后续步骤完成。
 
 活动服务已提供 GET /internal/ticket-tiers/{ticketTierId}/purchase-rule：按启用票档、已发布场次和已发布活动返回购票规则，非法 ID 返回 400，不存在或不可展示的资源返回 404。编译、真实数据库状态筛选及 HTTP 错误响应验证已通过，临时测试记录已回滚。接口不修改表结构；购票规则现已由后续订单预览流程调用，开售时间和本次数量由订单服务校验。内部接口尚未接入服务身份认证，现有网关未转发该路径。
 
@@ -120,4 +122,12 @@
 
 库存服务已实现本步骤约定，默认端口 8063。ticket_inventory 的 Flyway V1 已在本机 MySQL 8.0.39 实际执行成功；t_ticket_stock、t_stock_reservation 及迁移历史表已建立。真实 MySQL 验证通过：50 个并发购买请求对 10 张库存，10 次成功、40 次库存不足；20 次同编号请求只预留一次；同编号不同参数竞争、确认/释放竞争、过期重试、主动及异常回滚、HTTP 错误和 traceId 均通过。一次完整运行完成 144 项检查，数据库临时故障重试 0 次，临时记录已清理。可执行 JAR 已在独立端口 18063 与 Nacos 分组验证健康注册，验证进程已停止。测试源和运行脚本保存在 deploy/verify；这次小批量正确性验证不作为吞吐量指标。当前业务库存为空，演示脚本需填入真实票档/场次 ID 后手动执行；此阶段之后已接入下述订单侧库存调用。
 
-Order → Inventory 接入已完成：InventoryClient 通过 Nacos 服务名发送 HTTP 预留/确认/释放/查询，内部订单预留入口实际经过 OrderServiceImpl；保持服务独立契约，未引入库存模块依赖或订单数据库。编译打包通过；153 项 HTTP 客户端检查通过，包括双实例负载均衡、请求/响应参数、终态重试、业务错误、响应头及正文超时、无自动重试和原 Event 预览回归。正文读取超时的异常类型丢失已通过请求工厂恢复，并在两个 Client 中保留 504 分类。真实 Order → Inventory → MySQL 链路使用独立端口和临时 Nacos 分组，通过 134 项检查并核对库存计数；临时记录及自己的验证进程已清理。Nacos 负责发现实例，业务 HTTP 直接发送到库存服务。正式订单创建、活动规则组合校验、累计限购和支付接入仍待后续实现。
+Order → Inventory 接入阶段（历史）：InventoryClient 通过 Nacos 服务名发送 HTTP 预留/确认/释放/查询，内部订单预留入口实际经过 OrderServiceImpl；保持服务独立契约，该阶段未引入库存模块依赖或订单数据库。编译打包通过；153 项 HTTP 客户端检查通过，包括双实例负载均衡、请求/响应参数、终态重试、业务错误、响应头及正文超时、无自动重试和原 Event 预览回归。正文读取超时的异常类型丢失已通过请求工厂恢复，并在两个 Client 中保留 504 分类。真实 Order → Inventory → MySQL 链路使用独立端口和临时 Nacos 分组，通过 134 项检查并核对库存计数；临时记录及自己的验证进程已清理。Nacos 负责发现实例，业务 HTTP 直接发送到库存服务。正式订单创建与规则组合已在下述阶段接入，累计限购和支付仍待实现。
+
+### 订单创建与恢复阶段
+
+新增 `ticket_order` 库及 Flyway V1：订单主表、订单项；用户与购买幂等键唯一，主表保存订单状态、固定到期时间、预留编号、重试次数和领取租约。新接口为 `POST /api/orders`、`GET /api/orders/{orderNo}`，开发身份须显式开启，默认要求可信 Principal；查询验证订单归属。
+
+订单流程使用单独事务 Bean 保存订单和名称/价格快照，提交后通过原 InventoryClient 预留。`OrderStockWorkflow` 用条件更新领取任务、带令牌更新状态；库存结果不确定时持久化退避，后台使用原编号和原参数恢复，服务重启后继续。未支付到期订单先保存 CLOSING，再幂等释放；已售出或异常终态保留 REVIEW_REQUIRED 和日志。当前尚无支付，后续必须接入支付/关闭并发控制，不能把当前到期逻辑直接用于已支付流程。
+
+新验证使用真实 MySQL、独立进程和随机测试库；活动 HTTP 桩和库存故障代理注入响应丢失。验证过程及边界详见 `docs/order-workflow.md`，不将正确性验证宣称为高吞吐量压测。Outbox/MQ 在支付阶段接入，当前不声明已完成完整 Saga。
