@@ -11,10 +11,17 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
 
-/** 为订单请求建立 traceId，远程调用继续传递该标识。 */
+/**
+ * 为每个进入本服务的 HTTP 请求建立 traceId，并写入响应头和日志 MDC。
+ * 跨服务 Client 会继续把相同编号发到下游，便于关联整条调用链。
+ */
 @Component
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class TraceIdFilter extends OncePerRequestFilter {
+    /**
+     * 读取请求中的 X-Trace-Id，校验或生成编号，再写入响应头。
+     * 执行后续过滤器和 Controller；无论成功或异常，都在 finally 清理当前线程 MDC。
+     */
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {

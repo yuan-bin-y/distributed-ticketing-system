@@ -23,6 +23,7 @@
         <module>ticket-gateway</module>
         <module>ticket-event-service</module>
         <module>ticket-order-service</module>
+        <module>ticket-inventory-service</module>
     </modules>
 
     <properties>

@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务和订单服务。活动服务已接入 MySQL/Flyway 并实现活动查询与购票规则查询；订单服务已通过服务发现调用活动服务，实现购票预览。库存、真实订单和支付流程按后续步骤实现。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务和库存服务。活动服务提供活动查询与购票规则；订单服务通过服务发现调用活动服务进行预览，并通过内部预留入口调用库存服务；库存服务实现数据库预留、确认售出和释放。真实订单、累计限购和支付流程按后续步骤实现。
 
 ## 第一版目标
 
@@ -12,7 +12,7 @@
 
 ## 当前工程与启动
 
-父工程负责聚合和依赖版本管理，网关、活动服务和订单服务各自拥有启动类、配置和可执行 JAR；`ticket-common` 是公共代码库，不单独启动。Gateway 使用 WebFlux/Netty，活动与订单服务使用 Spring MVC/Tomcat。
+父工程负责聚合和依赖版本管理，网关、活动服务、订单服务和库存服务各自拥有启动类、配置和可执行 JAR；`ticket-common` 是公共代码库，不单独启动。Gateway 使用 WebFlux/Netty，业务服务使用 Spring MVC/Tomcat。
 
 要求 JDK 17 或更新版本、Maven 3.9。先在项目根目录构建（命令中的本地仓库与本项目验证使用的仓库一致）：
 
@@ -22,7 +22,7 @@ $env:JAVA_HOME = 'C:\Users\RE\.jdks\ms-17.0.20'
 mvn "-Dmaven.repo.local=$PWD/target/.m2" package
 ```
 
-先按 [Nacos 3.x 官方入门文档](https://nacos.io/docs/v3.1/quickstart/quick-start/) 启动单机 Nacos。三个应用默认连接 `127.0.0.1:8848`，客户端还需要能访问其 gRPC 端口 `9848`。Nacos 3.x 的控制台通常位于 `http://localhost:8080/index.html`，不是应用配置中的服务地址。当前代码只接入注册发现，还没有接入配置中心。
+先按 [Nacos 3.x 官方入门文档](https://nacos.io/docs/v3.1/quickstart/quick-start/) 启动单机 Nacos。四个应用默认连接 `127.0.0.1:8848`，客户端还需要能访问其 gRPC 端口 `9848`。Nacos 3.x 的控制台通常位于 `http://localhost:8080/index.html`，不是应用配置中的服务地址。当前代码只接入注册发现，还没有接入配置中心。
 
 若 Nacos 地址不同，在启动各应用的窗口中设置相同的 `NACOS_SERVER_ADDR`。若开启了 Nacos 客户端鉴权，还需设置 `SPRING_CLOUD_NACOS_DISCOVERY_USERNAME` 和 `SPRING_CLOUD_NACOS_DISCOVERY_PASSWORD`，使用该 Nacos 实例的账号密码。
 
@@ -44,7 +44,7 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" package
 
 网关按 `/api/events/**` 匹配请求，保留原路径；通过 `lb://ticket-event-service` 从 Nacos 发现实例并进行负载均衡。需要换端口时使用 `EVENT_PORT`、`GATEWAY_PORT`，活动服务重新注册实际端口，网关不再配置它的固定地址。
 
-IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner JRE 设为 JDK 17，分别运行 `TicketEventApplication`、`TicketGatewayApplication`、`TicketOrderApplication`。停止命令行服务使用各窗口的 Ctrl+C。
+IntelliJ IDEA 可重新加载根 Maven 工程，将 Project SDK 和 Maven Runner JRE 设为 JDK 17，分别运行 `TicketEventApplication`、`TicketGatewayApplication`、`TicketOrderApplication`、`TicketInventoryApplication`。停止命令行服务使用各窗口的 Ctrl+C。
 
 ### 订单服务
 
@@ -150,3 +150,155 @@ $env:LOCAL_MYSQL_PASSWORD = $dbCredential.GetNetworkCredential().Password
 | 响应无法解析、规则缺失、返回了其他票档规则 | 502 / INVALID_UPSTREAM_RESPONSE |
 
 订单请求的 traceId 通过 `X-Trace-Id` 传给活动服务，便于关联两个服务的响应及日志。已验证两个发现实例的负载均衡、开售边界、金额计算、参数校验、各类调用故障，以及独立测试端口与 Nacos 分组下的 Gateway → Order → Event → MySQL 链路；临时验证实例和数据库记录已清理。
+
+## 库存服务
+
+### 启动与建表
+
+库存服务模块为 `ticket-inventory-service`，启动类为 `com.byy.ticket.inventory.TicketInventoryApplication`，默认端口 `8063`（可用 `INVENTORY_PORT` 覆盖）。在 IDEA 重新加载 Maven 后运行该启动类即可，沿用 Windows 中的 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`，无需重复填写凭证。
+
+默认连接 `ticket_inventory` 库并自动建库，Flyway 执行本模块的 `V1__create_inventory_tables.sql`。可用 `INVENTORY_DB_URL` 覆盖完整连接地址；账号权限、MySQL 版本和东八区设置与活动服务相同。库存服务只连接自己的库。
+
+```powershell
+mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-inventory-service -am package
+& 'C:\Users\RE\.jdks\ms-17.0.20\bin\java.exe' -jar ticket-inventory-service/target/ticket-inventory-service-1.0-SNAPSHOT.jar
+```
+
+| 表 | 作用 |
+| --- | --- |
+| `t_ticket_stock` | 一个票档一行：所属场次、总量、可用量、预留量、售出量 |
+| `t_stock_reservation` | 一个订单关联编号一行：预留 ID、场次、票档、数量、到期时间和状态 |
+
+库存数量必须非负，且 `total_quantity = available_quantity + reserved_quantity + sold_quantity`。票档和场次 ID 不跨库建立外键。首次建表没有业务库存，先在活动服务查询真实票档和场次 ID，再填写 [库存演示脚本](deploy/mysql/seed_inventory_demo.sql) 中的两个 NULL 并手动执行。重复执行脚本不会重置库存。
+
+### 内部接口
+
+直接访问库存服务端口；当前网关未转发这些路径，内部接口的服务身份认证在后续阶段加入。
+
+| 接口 | 作用 |
+| --- | --- |
+| `POST /internal/stock-reservations` | 预留库存 |
+| `POST /internal/stock-reservations/{reservationId}/confirm` | 预留转为售出 |
+| `POST /internal/stock-reservations/{reservationId}/release` | 释放预留，归还可用量 |
+| `GET /internal/stock-reservations/{reservationId}` | 查询预留当前状态 |
+| `GET /internal/stocks/{ticketTierId}` | 查询票档库存数量 |
+
+预留请求示例（ID 换成实际值，时间换成晚于当前时间的东八区时间，精度最多毫秒）：
+
+```json
+{
+  "orderId": "DEMO_ORDER_001",
+  "sessionId": 1,
+  "ticketTierId": 3,
+  "quantity": 2,
+  "expiresAt": "2030-01-01T12:15:00.000"
+}
+```
+
+响应仍是 `Result<StockReservationVO>`，成功时 `data` 含 `reservationId`、`orderId`、场次、票档、数量、到期时间和 `status`。确认和释放用返回的 32 位 `reservationId`，无需请求体。订单编号限 1～64 位字母、数字、下划线或短横线；区分大小写。第一版一个订单只购买一个票档。
+
+同一订单编号重试时所有参数必须一致，包括到期时间；后续订单服务应在第一次调用前确定编号和时间，重试时复用。已到期的相同请求仍返回原记录，已释放的编号不能重新预留，返回的状态可能是 `SOLD` 或 `RELEASED`。
+
+### 核心代码流程
+
+`InternalStockReservationController` → `InventoryServiceImpl` → 两个 Mapper → MySQL。预留方法带 `@Transactional`：
+
+1. 尝试插入预留记录；`order_id` 唯一键冲突时保留并锁定原记录。
+2. 若是重试，核对原参数后返回原记录，不修改库存。
+3. 若是首次请求，用一条带 `available_quantity >= quantity` 条件的 SQL 扣可用量、加预留量。
+4. 库存不足等异常使预留记录和数量修改一起回滚；成功一起提交。
+
+例如库存 10 张，预留 2 张后为“可用 8、预留 2、售出 0”。确认后为“可用 8、预留 0、售出 2”；若改为释放，则为“可用 10、预留 0、售出 0”。同一预留只能从 `RESERVED` 转为 `SOLD` 或 `RELEASED`，终态不能互换。
+
+确认和释放先用 `SELECT ... FOR UPDATE` 锁定预留，再修改状态和库存。重复确认已售记录、重复释放已释放记录均返回成功且不再次改变数量；相反方向的操作返回冲突。MySQL 的锁与条件更新在多个服务实例下也生效，无需 Java `synchronized`。
+
+| 场景 | HTTP / code |
+| --- | --- |
+| 非法参数、首次预留时间已过 | 400 / BAD_REQUEST |
+| 库存或预留不存在 | 404 / RESOURCE_NOT_FOUND |
+| 库存不足、场次不匹配、同编号参数不同、终态冲突 | 409 / CONFLICT |
+| 数据库锁竞争或临时访问故障 | 503 / SERVICE_BUSY |
+| 非预期错误、记录与计数不一致 | 500 / INTERNAL_ERROR |
+
+当前没有仅凭 `expiresAt` 自动释放的任务；后续需要核对订单状态。订单预览继续只做预览；订单服务已通过内部预留入口调用库存，正式下单流程按后续步骤实现。
+
+### 复现验证
+
+在构建库存模块后，可运行真实 MySQL 验证脚本：
+
+```powershell
+& ./deploy/verify/verify_inventory.ps1 -JavaHome 'C:\Users\RE\.jdks\ms-17.0.20'
+```
+
+验证使用随机端口、关闭 Nacos 注册，创建独立测试库存并在结束时删除自身记录。检查并发不超卖、相同订单重试、确认与释放竞争、本地事务回滚、错误响应及追踪标识。它会首次创建库存库并执行 Flyway，不是吞吐量压测；不运行库存演示脚本，也不修改活动数据。
+
+## 订单调用库存
+
+订单服务新增 `InventoryClient`，与已有 `EventClient` 一样通过 `@LoadBalanced RestClient` 按 Nacos 服务名发送 HTTP 请求。默认目标为 `ticket-inventory-service`，连接/读取超时分别为 2 秒/5 秒；可用 `INVENTORY_CLIENT_CONNECT_TIMEOUT`、`INVENTORY_CLIENT_READ_TIMEOUT` 覆盖。两个客户端分别使用命名的 Builder 和 `@Qualifier`，各自配置超时。订单模块不依赖库存 Maven 模块，不连接库存数据库。
+
+| 客户端方法 | 库存端 HTTP 接口 |
+| --- | --- |
+| `reserve(request)` | `POST /internal/stock-reservations` |
+| `confirm(reservationId)` | `POST /internal/stock-reservations/{reservationId}/confirm` |
+| `release(reservationId)` | `POST /internal/stock-reservations/{reservationId}/release` |
+| `getReservation(reservationId)` | `GET /internal/stock-reservations/{reservationId}` |
+
+当前订单业务层接入 `reserveStock`。启动 Nacos、库存服务和订单服务后，直接向订单端口发送：
+
+```http
+POST http://localhost:8062/internal/orders/stock-reservations
+Content-Type: application/json
+```
+
+```json
+{
+  "orderId": "DEMO_ORDER_001",
+  "sessionId": 1,
+  "ticketTierId": 3,
+  "quantity": 2,
+  "expiresAt": "2030-01-01T12:15:00.000"
+}
+```
+
+场次和票档换成库存中实际的 ID，时间换成晚于当前时间的东八区时间（最多毫秒）。调用链为：
+
+```text
+InternalOrderStockController
+    → OrderServiceImpl.reserveStock
+    → InventoryClient.reserve
+    → HTTP /internal/stock-reservations
+    → InventoryServiceImpl → MySQL
+    → 返回预留结果给订单服务
+```
+
+响应为 `Result<OrderStockReservationVO>`，返回实际预留 ID、订单关联编号、场次、票档、数量、到期时间和状态。重复请求保持完全相同的 JSON 参数，包括到期时间；当前状态可能是 RESERVED、SOLD 或 RELEASED，终态结果不会重新扣库存。
+
+这是内部库存协作接口，当前没有创建订单、检查活动规则或认证用户。正式下单会组合活动规则校验、库存预留和订单落库；确认/释放客户端方法供后续支付及取消流程使用。网关不转发此内部路径，`/api/orders/preview` 不会预留库存。当前内部路径尚未接入服务身份校验。
+
+符合契约的库存 400/404/409 分别保留为参数错误、资源不存在和业务冲突；依赖不可用返回 503，超时返回 504，响应字段/状态不一致或异常重定向返回 502。请求的 traceId 会传到库存服务。
+
+客户端没有自动重试。超时、断连或错误响应可能发生在库存已提交之后；此时不要换编号重新预留或自动释放。使用相同编号、场次、票档、数量和到期时间重试；已知预留 ID 时可调用 `getReservation` 核对状态。
+
+### 客户端与调用链验证
+
+先构建订单与库存模块：
+
+```powershell
+mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl 'ticket-order-service,ticket-inventory-service' -am package
+```
+
+不依赖 Nacos/MySQL 的真实 HTTP 桩验证：
+
+```powershell
+& ./deploy/verify/verify_inventory_client.ps1 -JavaHome 'C:\Users\RE\.jdks\ms-17.0.20'
+```
+
+使用本机 Nacos/MySQL 的真实跨进程验证：
+
+```powershell
+& ./deploy/verify/verify_order_inventory_chain.ps1 -JavaHome 'C:\Users\RE\.jdks\ms-17.0.20'
+```
+
+真实验证在独立端口和临时 Nacos 分组启动服务，只生成自身测试库存记录，结束后清理这些记录及验证进程。测试不会添加业务演示库存或创建订单表。
+
+本步骤验证已通过：153 项客户端检查涵盖两实例负载均衡、四个调用方法、JSON 序列化、traceId、参数/状态响应核对、业务错误码、重定向、响应头/正文超时、不自动重试及活动预览回归；真实跨进程调用链完成 134 项检查，覆盖重复预留、库存不足、冲突和已售/已释放记录重试，并核对 MySQL 数量。临时记录和验证进程已清理。正文读取超时通过底层请求工厂保留超时异常原因，返回 504，格式错误仍为 502。

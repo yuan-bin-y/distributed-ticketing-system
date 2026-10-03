@@ -18,3 +18,7 @@ ticket:
       service-id: ticket-event-service
       connect-timeout: ${EVENT_CLIENT_CONNECT_TIMEOUT:2s}
       read-timeout: ${EVENT_CLIENT_READ_TIMEOUT:5s}
+    inventory:
+      service-id: ticket-inventory-service
+      connect-timeout: ${INVENTORY_CLIENT_CONNECT_TIMEOUT:2s}
+      read-timeout: ${INVENTORY_CLIENT_READ_TIMEOUT:5s}
