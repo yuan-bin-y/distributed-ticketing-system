@@ -12,6 +12,19 @@ import java.util.List;
 /** 订单查询与状态更新；任务领取和完成都用条件 SQL，协调多个订单实例。 */
 @Mapper
 public interface OrderMapper extends BaseMapper<TicketOrder> {
+    /** 通知接收的本地事务锁；只锁订单库，不跨 HTTP 持锁。 */
+    @Select("SELECT * FROM t_order WHERE order_no = #{orderNo} FOR UPDATE")
+    TicketOrder selectByNoForUpdate(@Param("orderNo") String orderNo);
+
+    /** 保存付款依据、调整状态并废止旧任务令牌；旧关单任务不能覆盖新状态。 */
+    @Update("""
+            UPDATE t_order SET payment_no=#{paymentNo},paid_at=#{paidAt},status=#{status},
+                last_error=#{error},lease_token=NULL,lease_until=NULL
+            WHERE id=#{id}
+            """)
+    int savePayment(@Param("id") Long id, @Param("paymentNo") String paymentNo,
+                    @Param("paidAt") LocalDateTime paidAt, @Param("status") String status,
+                    @Param("error") String error);
     /** 同一用户的购买幂等键对应唯一订单。 */
     @Select("SELECT * FROM t_order WHERE user_id = #{userId} AND idempotency_key = #{key}")
     TicketOrder selectByRequest(@Param("userId") Long userId, @Param("key") String key);

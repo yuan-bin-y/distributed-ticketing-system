@@ -28,14 +28,18 @@ public class Payment {
     private LocalDateTime expiresAt;
     /** 首次付款成功时间，不被重复请求改写。 */
     private LocalDateTime paidAt;
-    /** NONE、PENDING、DELIVERED；本阶段只产生 PENDING，不实际发送。 */
+    /** NONE、PENDING、DELIVERED；DELIVERED 只表示订单已保存依据，不代表成交。 */
     private String notifyStatus;
     /** 后续通知任务的处理时间，付款成功时与支付事实原子保存。 */
     private LocalDateTime nextNotifyAt;
-    /** 后续通知尝试次数，当前阶段保持零。 */
+    /** 后台通知领取次数，用于持久化退避。 */
     private Integer notifyAttemptCount;
-    /** 后续通知失败原因，当前阶段为空。 */
+    /** 最近一次通知失败的有界摘要。 */
     private String lastNotifyError;
+    /** 多实例通知任务的领取令牌，隔离旧任务的结果更新。 */
+    private String notifyLeaseToken;
+    /** 领取租约的到期时间，宕机后可以重领。 */
+    private LocalDateTime notifyLeaseUntil;
     /** 数据库维护的创建时间。 */
     private LocalDateTime createdAt;
     /** 数据库维护的更新时间。 */

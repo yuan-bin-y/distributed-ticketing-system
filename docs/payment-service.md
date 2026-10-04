@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务尚未发送结果通知，不改变订单或库存。
+ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务已经可靠发送成功通知，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING；库存尚未确认，见 [付款通知](payment-notification.md)。
 
-当前支付单可用于独立演示，不代表完整付款购票流程已经可用。订单当前的到期任务仍按未接入支付的流程释放库存；下一步必须接入支付证据、库存确认、关闭竞争及冲正恢复后，才可以把实际订单支付串起来。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
+当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后停止原未付款关闭任务；关闭竞争或冲正事实进入 REVIEW_REQUIRED，后续必须完成库存确认与冲正恢复，才形成完整履约流程。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
 
 ## 启动
 
@@ -46,7 +46,7 @@ $env:PAYMENT_DEV_IDENTITY_ENABLED = 'true'
 - status：CREATED 或 SUCCESS。
 - paid_at 保存首次成功时间；重复成功不改写它。
 - notify_status：NONE、PENDING、DELIVERED；本阶段没有发送器，只生成 PENDING。
-- next_notify_at、notify_attempt_count、last_notify_error 为后续通知恢复保留。
+- next_notify_at、notify_attempt_count、last_notify_error 保存通知退避与错误；V2增加通知租约，支持多实例领取及宕机恢复。
 - created_at、updated_at 由数据库维护。
 
 SUCCESS 与 paid_at、PENDING、next_notify_at 在同一条 SQL、同一本地事务中写入。DELIVERED 将来仅表示接收方可靠接收结果，不等于订单已履约。
@@ -136,4 +136,4 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-payment-service -am package
 
 ## 下一阶段
 
-订单的PaymentClient与创建支付入口已接入；下一步增加可靠接收支付结果，支付增加通知发送与失败恢复。订单再增加PAYMENT_CONFIRMING、PAID、REVERSAL_PENDING、REVERSED及支付证据，协调confirm/release竞争和迟到支付。完成HTTP业务闭环后，再接入MQ + Outbox。
+订单的创建支付入口、可靠付款通知和付款依据已经接入，正常状态为 PAYMENT_CONFIRMING。下一步增加库存确认、PAID及冲正恢复，协调confirm/release竞争和迟到支付。完成HTTP业务闭环后，再接入MQ + Outbox。

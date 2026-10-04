@@ -105,7 +105,7 @@ public class OrderStockWorkflow {
         }
     }
 
-    /** 持久化关闭进度再释放；无支付服务的本阶段只关闭未支付预留，SOLD 不自动回退。 */
+    /** 持久化关闭进度再释放；付款接收会调整状态并废止令牌，已进入关闭的付款保留供核对。 */
     private void close(TicketOrder order, String token) {
         if (OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus()) && order.getExpiresAt().isAfter(now())) {
             orders.finish(order.getId(), token, order.getStatus(), order.getStatus(), order.getReservationId(),

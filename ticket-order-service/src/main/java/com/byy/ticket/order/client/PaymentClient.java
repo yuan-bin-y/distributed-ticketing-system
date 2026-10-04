@@ -24,6 +24,41 @@ import java.util.concurrent.TimeoutException;
 /** 订单到支付的HTTP创建调用；按服务名发现实例、传播trace、检查响应，不自动重试写请求。 */
 @Component
 public class PaymentClient {
+    /** 根据原订单查询权威支付事实；通知中的成功标记和金额不能作为付款依据。 */
+    public PaymentResponse getByOrder(String orderNo) {
+        if (!validNo(orderNo)) { throw new IllegalArgumentException("订单编号不正确"); }
+        try {
+            return restClient.get().uri("/internal/payments/by-order/{orderNo}", orderNo)
+                    .header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate())
+                    .exchange((sent, received) -> {
+                        int status = received.getStatusCode().value();
+                        if (status == 404) {
+                            throw new com.byy.ticket.common.exception.ResourceNotFoundException("支付单不存在");
+                        }
+                        if (received.getStatusCode().is5xxServerError()) {
+                            throw new PaymentServiceCallException(Reason.UNAVAILABLE, "支付服务暂时不可用");
+                        }
+                        if (!received.getStatusCode().is2xxSuccessful()) { throw invalidResponse("支付查询HTTP状态异常"); }
+                        Result<PaymentResponse> result = received.bodyTo(RESPONSE_TYPE);
+                        if (result == null || !"OK".equals(result.code()) || !validResponse(result.data())
+                                || !orderNo.equals(result.data().orderNo())) {
+                            throw invalidResponse("支付查询结果不完整或归属错误");
+                        }
+                        return result.data();
+                    });
+        } catch (ResourceAccessException exception) {
+            throw new PaymentServiceCallException(isTimeout(exception) ? Reason.TIMEOUT : Reason.UNAVAILABLE,
+                    "支付事实查询暂时失败", exception);
+        } catch (IllegalStateException exception) {
+            if (exception.getMessage() != null && exception.getMessage().startsWith("No instances available for ")) {
+                throw new PaymentServiceCallException(Reason.UNAVAILABLE, "支付服务没有可用实例", exception);
+            }
+            throw exception;
+        } catch (RestClientException | HttpMessageConversionException exception) {
+            throw new PaymentServiceCallException(isTimeout(exception) ? Reason.TIMEOUT : Reason.INVALID_RESPONSE,
+                    "支付事实响应读取失败", exception);
+        }
+    }
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999999999.99");
     private static final ParameterizedTypeReference<Result<PaymentResponse>> RESPONSE_TYPE =
             new ParameterizedTypeReference<>() { };

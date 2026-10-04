@@ -65,7 +65,7 @@ public class PaymentVerification {
         }
         try (var context = start(true, false)) {
             bind(context);
-            check(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class) == 1,
+            check(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class) == 2,
                     "Flyway migration validates on second start");
             createAndConflict();
             concurrentCreate();
@@ -111,6 +111,7 @@ public class PaymentVerification {
                 "--spring.datasource.hikari.maximum-pool-size=25",
                 "--ticket.payment.simulation-enabled=" + enabled,
                 "--ticket.payment.dev-identity-enabled=" + enabled,
+                "--ticket.payment.notification.enabled=false",
                 "--spring.cloud.nacos.discovery.enabled=" + nacos,
                 "--spring.cloud.discovery.enabled=" + nacos,
                 "--spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848",

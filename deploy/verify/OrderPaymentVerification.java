@@ -56,7 +56,8 @@ public class OrderPaymentVerification {
         paymentDb=DriverManager.getConnection(dbUrl(paymentSchema),user,password);
         paymentPort=freePort();
         Process pay=start("ticket-payment-service",paymentPort,paymentSchema,List.of(
-                "--ticket.payment.simulation-enabled=true","--ticket.payment.dev-identity-enabled=true"));
+                "--ticket.payment.simulation-enabled=true","--ticket.payment.dev-identity-enabled=true",
+                "--ticket.payment.notification.enabled=false"));
         waitPing(pay,paymentPort,"/api/payments/ping");
         proxy=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         proxy.setExecutor(workers);

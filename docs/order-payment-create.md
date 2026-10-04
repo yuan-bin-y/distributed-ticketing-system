@@ -4,7 +4,7 @@
 
 新增 POST /api/orders/{orderNo}/payments，当前用户只提供订单编号。Order从本地订单表读取用户、总金额和原到期时间，通过PaymentClient创建或取回同一张支付单。
 
-此步完成创建支付单的跨服务调用，不修改订单状态，不新增订单表字段。支付单SUCCESS与订单PAID是不同事实；付款通知、支付证据落库、确认库存及迟到支付冲正恢复尚未接入。现有到期关闭任务仍按上一阶段运行，不能把当前入口描述为完整支付履约流程。
+此步完成创建支付单的跨服务调用，不修改订单状态，不新增订单表字段。支付单SUCCESS与订单PAID是不同事实；后续的 [付款通知](payment-notification.md) 已接入通知与依据保存，正常订单进入 PAYMENT_CONFIRMING。库存确认与迟到支付冲正恢复尚未完成，不能把当前入口描述为完整支付履约流程。
 
 ## 调用顺序
 
@@ -101,4 +101,4 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-order-service,ticket-payment
 
 ## 下一步
 
-Payment可靠通知Order；Order保存支付证据并恢复库存确认，核对支付与关闭竞争，处理迟到支付的冲正。完成第一版HTTP闭环后接入MQ + Outbox。
+Payment可靠通知Order及付款依据保存已完成，见 [付款通知](payment-notification.md)。下一步恢复库存确认，核对支付与关闭竞争，处理迟到支付的冲正。完成第一版HTTP闭环后接入MQ + Outbox。

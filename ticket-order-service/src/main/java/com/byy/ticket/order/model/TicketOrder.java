@@ -26,6 +26,10 @@ public class TicketOrder {
     private String status;
     /** 库存返回的预留编号。 */
     private String reservationId;
+    /** 从支付服务核实并持久化的唯一付款编号。 */
+    private String paymentNo;
+    /** 首次付款成功时间，不采用通知抵达时间。 */
+    private LocalDateTime paidAt;
     /** 固定的支付截止时间，重试不得重算。 */
     private LocalDateTime expiresAt;
     /** 下一次恢复或到期检查时间。 */

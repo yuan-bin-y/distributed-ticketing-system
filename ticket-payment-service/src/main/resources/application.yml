@@ -14,6 +14,9 @@ spring:
     encoding: UTF-8
     validate-on-migrate: true
   cloud:
+    loadbalancer:
+      retry:
+        enabled: false
     nacos:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
@@ -24,3 +27,13 @@ ticket:
     simulation-enabled: ${PAYMENT_SIMULATION_ENABLED:false}
     # Auth 接入前，显式开启才接受 X-Dev-User-Id。
     dev-identity-enabled: ${PAYMENT_DEV_IDENTITY_ENABLED:false}
+    notification:
+      enabled: ${PAYMENT_NOTIFICATION_ENABLED:true}
+      fixed-delay: ${PAYMENT_NOTIFICATION_FIXED_DELAY_MS:5000}
+      service-id: ticket-order-service
+      connect-timeout: ${ORDER_NOTIFICATION_CONNECT_TIMEOUT:2s}
+      read-timeout: ${ORDER_NOTIFICATION_READ_TIMEOUT:10s}
+      lease-duration: 30s
+      batch-size: 20
+      retry-base: 5s
+      retry-max: 5m
