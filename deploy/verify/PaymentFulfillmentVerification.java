@@ -111,7 +111,7 @@ public class PaymentFulfillmentVerification extends OrderPaymentVerification {
         int before=confirms.get();List<Future<?>> duplicates=new ArrayList<>();
         for(int i=0;i<12;i++)duplicates.add(workers.submit(()->{notifyOrder(order,payment);return null;}));
         for(var task:duplicates)task.get(15,TimeUnit.SECONDS);
-        check(orderStatus(order).equals("PAID")&&confirms.get()==before,"duplicate notification cannot reopen PAID or sell again");
+        check(orderStatus(order).equals("COMPLETED")&&confirms.get()==before,"duplicate notification cannot reopen completed order or sell again");
         check(reversalCount(order)==0,"normal payment does not reverse");
         System.out.println("PASS paid order, real sold stock and duplicate notifications");
     }
@@ -168,7 +168,7 @@ public class PaymentFulfillmentVerification extends OrderPaymentVerification {
         String order=fixture("PENDING_PAYMENT",1L,true,now().plusSeconds(4));String payment=create(order);pay(payment);
         // 故意不发通知，到期任务仍回查支付，恢复付款依据而不释放已付款库存。
         awaitState(order,"PAID");check(stockStatus(order).equals("SOLD")&&reversalCount(order)==0,"expiry query recovers missing payment notification");
-        notifyOrder(order,payment);check(orderStatus(order).equals("PAID"),"late notification leaves final progress intact");
+        notifyOrder(order,payment);check(orderStatus(order).equals("COMPLETED"),"late notification leaves final progress intact");
         System.out.println("PASS expiry recovery of successful payment without notification");
     }
     void competition(boolean releaseWins)throws Exception{
@@ -185,7 +185,7 @@ public class PaymentFulfillmentVerification extends OrderPaymentVerification {
         check(current.confirmEntered.await(10,TimeUnit.SECONDS),"new paid workflow sends confirmation");
         if(releaseWins){current.allowRelease.countDown();await(()->stockStatus(order).equals("RELEASED"),"old release wins terminal stock");current.allowConfirm.countDown();awaitState(order,"REVERSED");}
         else{current.allowConfirm.countDown();await(()->stockStatus(order).equals("SOLD"),"new confirmation wins terminal stock");current.allowRelease.countDown();awaitState(order,"PAID");}
-        check(orderStatus(order).equals(releaseWins?"REVERSED":"PAID"),"close/confirm competition has consistent order outcome");
+        check(orderStatus(order).equals(releaseWins?"REVERSED":"COMPLETED"),"close/confirm competition has consistent order outcome");
         check(reversalCount(order)==(releaseWins?1:0),"only released stock results in reversal");
         try(var sql=paymentDb.createStatement()){sql.execute("DROP TRIGGER delayed_payment");}
         gate=null;System.out.println("PASS in-flight close versus confirm: "+(releaseWins?"release wins, reversed":"confirm wins, paid"));
@@ -239,7 +239,18 @@ public class PaymentFulfillmentVerification extends OrderPaymentVerification {
         try(var sql=db.prepareStatement("SELECT "+column+" FROM "+(db==orderDb?"t_order":"t_payment")+" WHERE order_no=?")){sql.setString(1,order);try(var rows=sql.executeQuery()){rows.next();return rows.getString(1);}}
     }
     void update(String query,String...args)throws Exception{try(var sql=orderDb.prepareStatement(query)){for(int i=0;i<args.length;i++)sql.setString(i+1,args[i]);sql.executeUpdate();}}
-    void awaitState(String order,String status)throws Exception{await(()->orderStatus(order).equals(status),"order reaches "+status);}
+    void awaitState(String order,String status)throws Exception{
+        String target=status.equals("PAID")?"COMPLETED":status;
+        await(()->orderStatus(order).equals(target),"order reaches "+target);
+        if(target.equals("COMPLETED")) {
+            var tickets=data(request("GET",orderPort,"/api/orders/"+order+"/tickets",1L,null));
+            check(tickets.path("orderStatus").asString().equals("COMPLETED")&&tickets.path("tickets").size()==2,
+                    "real paid/sold order issues two tickets");
+        } else if(target.equals("REVERSED")) {
+            check(data(request("GET",orderPort,"/api/orders/"+order+"/tickets",1L,null)).path("tickets").isEmpty(),
+                    "reversed order issues no tickets");
+        }
+    }
     interface Condition{boolean evaluate()throws Exception;}
     void await(Condition condition,String name)throws Exception{for(int i=0;i<220;i++){if(condition.evaluate()){check(true,name);return;}Thread.sleep(100);}throw new AssertionError(name+"; logs "+logs);}
     void waitPing(Process process,int port,String path,int expected)throws Exception{

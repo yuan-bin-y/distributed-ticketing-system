@@ -21,7 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
- * 下单、到期、付款履约恢复状态机。每条 SQL 使用短本地事务，HTTP 在数据库事务外执行。
+ * 下单、到期、付款及出票恢复状态机。HTTP在数据库事务外执行，出票使用独立本地事务。
  * 请求、恢复任务共用此流程；领取令牌防止旧任务覆盖新进度，库存幂等防止重复扣减。
  */
 @Service
@@ -33,16 +33,19 @@ public class OrderStockWorkflow {
     private final OrderWorkflowProperties properties;
     private final Clock clock;
     private final OrderPaymentFulfillment fulfillment;
+    private final OrderTicketIssueTransaction ticketIssue;
 
-    /** 注入订单持久化、库存客户端、付款履约步骤、配置和业务时钟。 */
+    /** 注入订单持久化、库存客户端、付款履约步骤、出票事务、配置和业务时钟。 */
     public OrderStockWorkflow(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
-                              OrderWorkflowProperties properties, Clock clock, OrderPaymentFulfillment fulfillment) {
+                              OrderWorkflowProperties properties, Clock clock, OrderPaymentFulfillment fulfillment,
+                              OrderTicketIssueTransaction ticketIssue) {
         this.orders = orders;
         this.items = items;
         this.inventory = inventory;
         this.properties = properties;
         this.clock = clock;
         this.fulfillment = fulfillment;
+        this.ticketIssue = ticketIssue;
     }
 
     /** 按截止时间限量扫描，单条失败不会阻断后续订单；多实例再通过 claim 竞争领取。 */
@@ -72,6 +75,8 @@ public class OrderStockWorkflow {
                 fulfillment.confirm(order, token);
             } else if (OrderStatus.REVERSAL_PENDING.name().equals(order.getStatus())) {
                 fulfillment.reverse(order, token);
+            } else if (OrderStatus.PAID.name().equals(order.getStatus())) {
+                ticketIssue.issue(id,token);
             } else {
                 close(order, token);
             }

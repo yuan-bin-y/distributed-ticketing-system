@@ -4,12 +4,12 @@
 
 在可靠付款通知的基础上，订单后台任务推进付款后的库存确认，正常成交进入 PAID；库存已经释放时，以原付款编号进行全额模拟冲正，确认完成后进入 REVERSED。网络失败、响应丢失或订单状态保存失败均根据持久化步骤恢复。
 
-这是模拟支付的 HTTP 交易闭环，未接入真实支付渠道、认证、出票、累计限购、MQ 或 Outbox。矛盾数据、错误预留归属等进入 REVIEW_REQUIRED，保留事实供人工核对。
+这是模拟支付的 HTTP 交易闭环，未接入真实支付渠道、认证、累计限购、MQ 或 Outbox。后续本地事务出票已接入，见 [电子票生成与查询](ticket-issuance.md)。矛盾数据、错误预留归属等进入 REVIEW_REQUIRED，保留事实供人工核对。
 
 ## 按代码顺序阅读
 
 1. `OrderPaymentReceiptTransaction.accept()`：核实付款快照，在本地事务保存付款依据、PAYMENT_CONFIRMING、立即可执行的 next_attempt_at，并废止旧任务令牌。重复通知不重置已成交、待冲正或已冲正状态。
-2. `OrderMapper.selectDue()/claim()`：原任务扫描扩展为 STOCK_PENDING、PENDING_PAYMENT、CLOSING、PAYMENT_CONFIRMING、REVERSAL_PENDING。多订单实例用原子 SQL 竞争领取；PAID、REVERSED、REVIEW_REQUIRED 不自动扫描。
+2. `OrderMapper.selectDue()/claim()`：原任务扫描扩展为 STOCK_PENDING、PENDING_PAYMENT、CLOSING、PAYMENT_CONFIRMING、REVERSAL_PENDING，出票阶段再加入 PAID。多订单实例用原子 SQL 竞争领取；COMPLETED、REVERSED、REVIEW_REQUIRED 不自动扫描。
 3. `OrderStockWorkflow.advance()`：按当前状态分别处理库存预留、到期关闭、付款确认、冲正恢复。不会跨 HTTP 持有本地事务。
 4. `OrderPaymentFulfillment.confirm()`：回查付款事实；查询原预留并核对原订单编号、场次、票档、数量和期限。RESERVED 调用已有 InventoryClient.confirm；SOLD 再核对付款后保存 PAID；RELEASED 则先保存 REVERSAL_PENDING 和固定冲正原因。
 5. `OrderPaymentFulfillment.reverse()`：下一次领取再进入冲正步骤。先确认原库存仍为 RELEASED，再查询原付款。已有成功冲正直接保存原编号；否则调用 PaymentClient.reverse，核对订单、付款、金额、原因、成功状态和时间后保存 REVERSED。
@@ -55,11 +55,11 @@
 
 订单后台任务默认每批后延迟5秒，租约增加到60秒。租约在启动时检查必须至少覆盖两次库存及两次支付调用的连接/读取超时总和，再留5秒余量。固定窗口和首次付款时间不会因重试延长。
 
-手动验证流程：创建真实订单并取得预留 → POST /api/orders/{orderNo}/payments → POST /api/payments/{paymentNo}/simulate-success → GET /api/orders/{orderNo} 查看 PAID。后台推进可能需要数秒；接口均通过现有网关公共路由。尚未生成电子票。
+手动验证流程：创建真实订单并取得预留 → POST /api/orders/{orderNo}/payments → POST /api/payments/{paymentNo}/simulate-success → GET /api/orders/{orderNo} 查看成交后出票的 COMPLETED，再 GET /api/orders/{orderNo}/tickets 查询本人电子票。后台推进可能需要数秒；接口均通过现有网关公共路由。
 
 ## 验证依据
 
-打包三个服务后运行 `deploy/verify/verify_payment_fulfillment.ps1`。本次通过122项检查：
+打包三个服务后运行 `deploy/verify/verify_payment_fulfillment.ps1`。最新追加出票后通过135项检查（原成交与冲正阶段122项）：
 
 - 三个真实服务进程和三个随机独立MySQL库；订单使用已落库夹具，库存预留、确认和释放均走真实库存接口，支付和冲正均走真实支付接口。
 - V2→V3升级与上一阶段付款核对记录恢复。

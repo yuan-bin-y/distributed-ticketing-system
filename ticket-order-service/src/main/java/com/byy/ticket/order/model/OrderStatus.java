@@ -10,6 +10,8 @@ public enum OrderStatus {
     PAYMENT_CONFIRMING,
     /** 有效付款与原库存售出均已核实，订单成交。 */
     PAID,
+    /** 全部电子票与完成状态已在同一本地事务中提交。 */
+    COMPLETED,
     /** 原库存已释放，正在以固定付款编号和原因恢复全额冲正。 */
     REVERSAL_PENDING,
     /** 已核实全额模拟冲正成功，不再交票。 */

@@ -46,7 +46,7 @@ public class PaymentNotificationVerification extends OrderPaymentVerification {
         waitPing(paymentProcess,paymentPort,"/api/payments/ping"); stop(paymentProcess);
         orderProcess=launchOrder(List.of());waitPing(orderProcess,orderPort,"/api/orders/ping");
         paymentProcess=launchPayment(paymentPort,List.of());waitPing(paymentProcess,paymentPort,"/api/payments/ping");
-        check(scalar(orderDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==3,"order V1 upgraded to V3");
+        check(scalar(orderDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==4,"order V1 upgraded to V4");
         check(scalar(paymentDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==2,"payment V1 upgraded to V2");
         normal(); duplicateAndForgery(); failedAndLost(); rollback(); closeCompetition(); restartAndConcurrency();
     }

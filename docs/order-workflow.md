@@ -4,7 +4,7 @@
 
 本阶段实现订单数据库、正式下单与归属查询、固定参数的库存预留、持久化退避和多实例任务领取、订单到期后的幂等释放。订单预览和原内部库存演示接口保留。
 
-每张订单只买一个票档，可以买多张。限购目前检查本次数量，尚未统计用户累计购买。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；后续库存确认与关闭竞争处理见 [成交与冲正恢复](payment-fulfillment.md)，成交为PAID，无法履约冲正为REVERSED。没有MQ或Outbox。
+每张订单只买一个票档，可以买多张。限购目前检查本次数量，尚未统计用户累计购买。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；后续库存确认与关闭竞争处理见 [成交与冲正恢复](payment-fulfillment.md)，成交为PAID，随后本地事务出票为COMPLETED，见 [电子票生成与查询](ticket-issuance.md)；无法履约冲正为REVERSED。没有MQ或Outbox。
 
 ## 启动与手动使用
 

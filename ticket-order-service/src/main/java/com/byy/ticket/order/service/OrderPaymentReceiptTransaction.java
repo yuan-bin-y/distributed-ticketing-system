@@ -34,11 +34,13 @@ public class OrderPaymentReceiptTransaction {
             throw new OrderConflictException("订单已记录不同付款依据");
         }
         boolean reversed = payment.reversalNo() != null;
-        if (order.getPaymentNo() != null && (!reversed || !OrderStatus.PAID.name().equals(order.getStatus()))) {
+        boolean fulfilled=OrderStatus.PAID.name().equals(order.getStatus())
+                || OrderStatus.COMPLETED.name().equals(order.getStatus());
+        if (order.getPaymentNo() != null && (!reversed || !fulfilled)) {
             return new PaymentReceiptVO(order.getOrderNo(), order.getPaymentNo(), true);
         }
         boolean canReconcile = order.getReservationId() != null
-                && !OrderStatus.PAID.name().equals(order.getStatus());
+                && !fulfilled;
         String target = canReconcile ? OrderStatus.PAYMENT_CONFIRMING.name() : OrderStatus.REVIEW_REQUIRED.name();
         String error = canReconcile ? null : "付款缺少预留依据或已成交后出现外部冲正，需人工核对";
         if (orders.savePayment(order.getId(), payment.paymentNo(), payment.paidAt(), target, error) != 1) {

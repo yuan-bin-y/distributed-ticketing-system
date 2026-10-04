@@ -12,6 +12,16 @@ import java.util.List;
 /** 订单查询与状态更新；任务领取和完成都用条件 SQL，协调多个订单实例。 */
 @Mapper
 public interface OrderMapper extends BaseMapper<TicketOrder> {
+    /** 出票本地事务先锁定订单行，与重复任务、付款通知按同一行串行核对。 */
+    @Select("SELECT * FROM t_order WHERE id=#{id} FOR UPDATE")
+    TicketOrder selectByIdForUpdate(@Param("id") Long id);
+
+    /** 全部票保存后更新完成状态；与插票处于同一本地事务，不能只完成其中一部分。 */
+    @Update("""
+            UPDATE t_order SET status='COMPLETED',last_error=NULL,lease_token=NULL,lease_until=NULL
+            WHERE id=#{id} AND status='PAID' AND lease_token=#{token}
+            """)
+    int finishIssuing(@Param("id") Long id,@Param("token") String token);
     /** 通知接收的本地事务锁；只锁订单库，不跨 HTTP 持锁。 */
     @Select("SELECT * FROM t_order WHERE order_no = #{orderNo} FOR UPDATE")
     TicketOrder selectByNoForUpdate(@Param("orderNo") String orderNo);
@@ -36,7 +46,7 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
     /** 有索引且限量扫描到期任务；已被领取且租约未到期的任务不重复领取。 */
     @Select("""
             SELECT id FROM t_order
-             WHERE status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING')
+             WHERE status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING','PAID')
                AND next_attempt_at <= CURRENT_TIMESTAMP(3)
                AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP(3))
              ORDER BY next_attempt_at, id LIMIT #{limit}
@@ -48,7 +58,7 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
             UPDATE t_order SET lease_token = #{token},
                 lease_until = TIMESTAMPADD(MICROSECOND, #{leaseMicros}, CURRENT_TIMESTAMP(3)),
                 attempt_count = attempt_count + 1
-             WHERE id = #{id} AND status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING')
+             WHERE id = #{id} AND status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING','PAID')
                AND next_attempt_at <= CURRENT_TIMESTAMP(3)
                AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP(3))
             """)

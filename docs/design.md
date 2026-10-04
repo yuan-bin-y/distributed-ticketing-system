@@ -2,7 +2,7 @@
 
 本文件先固定学习项目的业务范围与关键规则。实现过程中如需改变服务边界或交易语义，先更新本文件，再修改代码。
 
-当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。真实认证、用户累计限购、出票、Outbox/MQ 尚未实现。
+当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。订单服务已本地事务出票并进入 COMPLETED，见 [电子票生成与查询](ticket-issuance.md)。真实认证、用户累计限购、验票、Outbox/MQ 尚未实现。
 
 当前实施顺序按学习讨论调整：先以 HTTP、幂等和持久化恢复完成第一版业务闭环，再引入 MQ 与 Outbox。Payment 的通知字段记录待发送事实，后台已发送 HTTP 通知并恢复失败；Order保存依据并恢复库存确认与无法履约冲正。后文中的 MQ/Outbox 描述为后续演进目标。
 
@@ -42,7 +42,7 @@
 
 每次预留有独立 `reservation_id`、订单关联、到期时间和状态：`RESERVED -> SOLD` 或 `RESERVED -> RELEASED`。这两个终态不可互相转换；确认和释放都须幂等。
 
-当前订单状态为 `STOCK_PENDING -> PENDING_PAYMENT`，未支付到期走 `CLOSING -> CLOSED`；明确创建失败为 `CREATE_FAILED`，异常人工核对为 `REVIEW_REQUIRED`。支付接入阶段已增加 `PAYMENT_CONFIRMING -> PAID` 与 `REVERSAL_PENDING -> REVERSED`，出票阶段再增加 `COMPLETED`。状态条件更新、领取令牌和库存互斥终态共同控制竞争，不能仅凭订单租约推断旧HTTP调用已停止。支付单独保存付款事实与冲正记录。电子票计划以订单项为唯一来源，重复结果不能重复出票。
+当前订单状态为 `STOCK_PENDING -> PENDING_PAYMENT`，未支付到期走 `CLOSING -> CLOSED`；明确创建失败为 `CREATE_FAILED`，异常人工核对为 `REVIEW_REQUIRED`。支付接入阶段已增加 `PAYMENT_CONFIRMING -> PAID` 与 `REVERSAL_PENDING -> REVERSED`，出票阶段已增加 `PAID -> COMPLETED`。状态条件更新、领取令牌和库存互斥终态共同控制竞争，不能仅凭订单租约推断旧HTTP调用已停止。支付单独保存付款事实与冲正记录。电子票以订单项和第几张票为唯一来源，在同一本地事务中生成全部票和完成状态，重复任务不重复出票。
 
 ## 4. 交易流程与异常
 
@@ -57,7 +57,7 @@
 
 1. 当前 Payment 在本地事务记录支付成功和待通知状态，后台发送HTTP通知及失败恢复；Order可靠保存依据，后台完成库存确认与无法履约冲正恢复。第一版闭环完成后再引入Outbox和MQ。
 2. 订单核实并持久化支付证据，进入 `PAYMENT_CONFIRMING`，再请求库存确认售出；不确定结果查询或幂等重试，确认支付有效且库存为 `SOLD` 才置 `PAID`。
-3. 出票阶段再生成唯一电子票并置为 `COMPLETED`，当前没有出票代码。
+3. 出票阶段已本地事务生成唯一电子票并置为 `COMPLETED`，提供本人订单电子票查询，见 [电子票生成与查询](ticket-issuance.md)。
 4. 通知可重复、可延迟，需要幂等、重试及可核对的恢复记录；引入消息队列后再加入死信处理。
 
 ### 超时与迟到支付
