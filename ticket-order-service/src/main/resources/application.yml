@@ -41,3 +41,7 @@ ticket:
       service-id: ticket-inventory-service
       connect-timeout: ${INVENTORY_CLIENT_CONNECT_TIMEOUT:2s}
       read-timeout: ${INVENTORY_CLIENT_READ_TIMEOUT:5s}
+    payment:
+      service-id: ticket-payment-service
+      connect-timeout: ${PAYMENT_CLIENT_CONNECT_TIMEOUT:2s}
+      read-timeout: ${PAYMENT_CLIENT_READ_TIMEOUT:5s}

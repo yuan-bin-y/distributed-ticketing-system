@@ -2,6 +2,8 @@ package com.byy.ticket.order.service.impl;
 
 import com.byy.ticket.order.client.EventClient;
 import com.byy.ticket.order.client.InventoryClient;
+import com.byy.ticket.order.client.PaymentClient;
+import com.byy.ticket.order.client.dto.PaymentCreateRequest;
 import com.byy.ticket.order.client.dto.StockReservationRequest;
 import com.byy.ticket.order.client.exception.EventServiceCallException;
 import com.byy.ticket.order.dto.order.OrderPreviewDTO;
@@ -12,11 +14,13 @@ import com.byy.ticket.order.vo.order.OrderStockReservationVO;
 import com.byy.ticket.common.exception.ResourceNotFoundException;
 import com.byy.ticket.order.dto.order.OrderCreateDTO;
 import com.byy.ticket.order.vo.order.OrderDetailVO;
+import com.byy.ticket.order.vo.order.OrderPaymentVO;
 import com.byy.ticket.order.config.OrderWorkflowProperties;
 import com.byy.ticket.order.exception.OrderConflictException;
 import com.byy.ticket.order.mapper.OrderMapper;
 import com.byy.ticket.order.mapper.OrderItemMapper;
 import com.byy.ticket.order.model.TicketOrder;
+import com.byy.ticket.order.model.OrderStatus;
 import com.byy.ticket.order.model.OrderItem;
 import com.byy.ticket.order.service.OrderTransactionService;
 import com.byy.ticket.order.service.OrderStockWorkflow;
@@ -28,13 +32,14 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 
 /**
- * 订单业务编排：通过 EventClient 查询活动规则，通过 InventoryClient 调用库存。
+ * 订单业务编排：EventClient查询规则，InventoryClient调用库存，PaymentClient创建支付单。
  * Client 发出 HTTP 请求；目标服务自己的 Controller、Service 和 Mapper 完成对应业务。
  */
 @Service
 public class OrderServiceImpl implements OrderService {
     private final EventClient eventClient;
     private final InventoryClient inventoryClient;
+    private final PaymentClient paymentClient;
     private final Clock clock;
     private final OrderMapper orders;
     private final OrderItemMapper items;
@@ -47,7 +52,7 @@ public class OrderServiceImpl implements OrderService {
      */
     public OrderServiceImpl(EventClient eventClient, InventoryClient inventoryClient, Clock clock,
                             OrderMapper orders, OrderItemMapper items, OrderTransactionService transactions,
-                            OrderStockWorkflow workflow, OrderWorkflowProperties properties) {
+                            OrderStockWorkflow workflow, OrderWorkflowProperties properties, PaymentClient paymentClient) {
         this.eventClient = eventClient;
         this.inventoryClient = inventoryClient;
         this.clock = clock;
@@ -56,6 +61,7 @@ public class OrderServiceImpl implements OrderService {
         this.transactions = transactions;
         this.workflow = workflow;
         this.properties = properties;
+        this.paymentClient = paymentClient;
     }
 
     /**
@@ -105,6 +111,41 @@ public class OrderServiceImpl implements OrderService {
         TicketOrder order = orders.selectOwned(userId, orderNo);
         if (order == null) { throw new ResourceNotFoundException("订单不存在"); }
         return detail(order);
+    }
+
+    /**
+     * 发起支付只读取已保存的订单快照，HTTP调用不占用数据库事务。
+     * 响应返回后再检查归属、状态与期限；若已关闭则不把支付单当作仍可付款返回。
+     * 创建失败或响应丢失不改订单，重试仍使用同一订单编号、金额和期限。
+     */
+    @Override
+    public OrderPaymentVO createPayment(Long userId, String orderNo) {
+        if (userId == null || userId < 1 || orderNo == null || !orderNo.matches("[0-9a-f]{32}")) {
+            throw new IllegalArgumentException("用户或订单编号不正确");
+        }
+        TicketOrder order = orders.selectOwned(userId, orderNo);
+        if (order == null) { throw new ResourceNotFoundException("订单不存在"); }
+        requirePayable(order);
+        var payment = paymentClient.createPayment(new PaymentCreateRequest(order.getOrderNo(), order.getUserId(),
+                order.getTotalAmount(), order.getExpiresAt()));
+        TicketOrder current = orders.selectOwned(userId, orderNo);
+        if (current == null) { throw new ResourceNotFoundException("订单不存在"); }
+        requirePayable(current);
+        return new OrderPaymentVO(payment.orderNo(), payment.paymentNo(), payment.amount(), payment.status(),
+                payment.expiresAt(), payment.paidAt(), payment.reversalNo(), payment.reversalStatus());
+    }
+
+    /** 发起支付要求已确认库存预留、订单待支付且当前时间严格早于到期时间。 */
+    private void requirePayable(TicketOrder order) {
+        if (!OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())) {
+            throw new OrderConflictException("当前订单状态不能发起支付");
+        }
+        if (order.getExpiresAt() == null || !order.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
+            throw new OrderConflictException("订单已到期，不能发起支付");
+        }
+        if (order.getReservationId() == null || !order.getReservationId().matches("[0-9a-f]{32}")) {
+            throw new OrderConflictException("订单缺少有效库存预留，不能发起支付");
+        }
     }
 
     /** 重复购买只核对快照并返回原订单；后台任务负责恢复，不突破持久化退避。 */

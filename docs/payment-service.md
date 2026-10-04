@@ -1,8 +1,8 @@
-# 支付服务：独立提供能力阶段
+# 支付服务与订单创建支付单
 
 ## 当前范围
 
-ticket-payment-service 默认端口 8064，独立连接 ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单服务尚未接入 PaymentClient，支付服务也未发送结果通知，不改变订单或库存。
+ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务尚未发送结果通知，不改变订单或库存。
 
 当前支付单可用于独立演示，不代表完整付款购票流程已经可用。订单当前的到期任务仍按未接入支付的流程释放库存；下一步必须接入支付证据、库存确认、关闭竞争及冲正恢复后，才可以把实际订单支付串起来。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
 
@@ -136,4 +136,4 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-payment-service -am package
 
 ## 下一阶段
 
-订单增加 PaymentClient、创建支付入口及可靠接收支付结果；支付增加通知发送与失败恢复。订单再增加PAYMENT_CONFIRMING、PAID、REVERSAL_PENDING、REVERSED及支付证据，协调confirm/release竞争和迟到支付。完成HTTP业务闭环后，再接入MQ + Outbox。
+订单的PaymentClient与创建支付入口已接入；下一步增加可靠接收支付结果，支付增加通知发送与失败恢复。订单再增加PAYMENT_CONFIRMING、PAID、REVERSAL_PENDING、REVERSED及支付证据，协调confirm/release竞争和迟到支付。完成HTTP业务闭环后，再接入MQ + Outbox。

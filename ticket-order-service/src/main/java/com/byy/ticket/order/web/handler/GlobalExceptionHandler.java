@@ -5,6 +5,7 @@ import com.byy.ticket.common.result.ApiErrorCode;
 import com.byy.ticket.common.result.Result;
 import com.byy.ticket.order.client.exception.EventServiceCallException;
 import com.byy.ticket.order.client.exception.InventoryServiceCallException;
+import com.byy.ticket.order.client.exception.PaymentServiceCallException;
 import com.byy.ticket.order.exception.OrderConflictException;
 import com.byy.ticket.order.exception.OrderIdentityException;
 import org.springframework.dao.TransientDataAccessException;
@@ -115,6 +116,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Result<Void>> handleInventoryFailure(InventoryServiceCallException exception) {
         if (exception.getReason() != InventoryServiceCallException.Reason.CONFLICT) {
             log.warn("库存服务调用失败，原因={}", exception.getReason(), exception);
+        }
+        return switch (exception.getReason()) {
+            case CONFLICT -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Result.failure(ApiErrorCode.CONFLICT, exception.getMessage()));
+            case UNAVAILABLE -> ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Result.failure(ApiErrorCode.UPSTREAM_UNAVAILABLE, exception.getMessage()));
+            case TIMEOUT -> ResponseEntity.status(HttpStatus.GATEWAY_TIMEOUT)
+                    .body(Result.failure(ApiErrorCode.UPSTREAM_TIMEOUT, exception.getMessage()));
+            case INVALID_RESPONSE -> ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                    .body(Result.failure(ApiErrorCode.INVALID_UPSTREAM_RESPONSE, exception.getMessage()));
+        };
+    }
+
+    /** 支付业务冲突返回409；网络不可用、超时和响应错误分别返回503、504、502。 */
+    @ExceptionHandler(PaymentServiceCallException.class)
+    public ResponseEntity<Result<Void>> handlePaymentFailure(PaymentServiceCallException exception) {
+        if (exception.getReason() != PaymentServiceCallException.Reason.CONFLICT) {
+            log.warn("支付服务调用失败，原因={}", exception.getReason(), exception);
         }
         return switch (exception.getReason()) {
             case CONFLICT -> ResponseEntity.status(HttpStatus.CONFLICT)

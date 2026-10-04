@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务和支付服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放；库存提供预留、确认售出与释放；支付独立提供支付单、模拟成功、查询及全额冲正。支付尚未接入订单，Auth、累计限购、出票、Outbox/MQ 按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务和支付服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。付款通知与库存确认尚未串起，Auth、累计限购、出票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)。
 
 ## 订单下单与恢复
 
@@ -20,7 +20,9 @@ Auth 尚未接入，新入口默认需要可信身份。仅本地学习可设置
 
 默认模拟成功和冲正关闭。仅本地演示在 Payment 运行配置中设置 `PAYMENT_SIMULATION_ENABLED=true;PAYMENT_DEV_IDENTITY_ENABLED=true`，公共接口带 `X-Dev-User-Id: 1`。创建单、查询和冲正由内部接口提供；网关只路由 `/api/payments/**`，不转发内部路径。支付成功和待通知状态原子保存，但当前没有通知发送器，也不更新订单或库存。完整接口和阅读顺序见 [支付服务](docs/payment-service.md)。
 
-支付模块通过90项真实MySQL、并发、事务回滚、HTTP、重启与Nacos注册检查。验证脚本为 `deploy/verify/verify_payment.ps1 -VerifyNacos`，只使用并清理随机测试库；正式支付库由用户下一次启动时迁移。下一步接入订单支付流程；MQ + Outbox 在第一版HTTP闭环后引入。
+支付模块通过90项真实MySQL、并发、事务回滚、HTTP、重启与Nacos注册检查。验证脚本为 `deploy/verify/verify_payment.ps1 -VerifyNacos`，只使用并清理随机测试库；正式支付库由用户启动时迁移。
+
+订单已新增 `POST /api/orders/{orderNo}/payments`：检查归属、状态、预留和期限，读取原订单金额后经HTTP创建或返回原支付单。当前不更新订单为已支付。独立Order/Payment与响应故障验证通过123项检查，原客户端153项回归通过；脚本为 `deploy/verify/verify_order_payment.ps1`。下一步接入支付通知与库存确认，MQ + Outbox在第一版HTTP闭环后引入。
 
 ## 第一版目标
 

@@ -4,6 +4,7 @@ import com.byy.ticket.common.result.Result;
 import com.byy.ticket.order.dto.order.OrderPreviewDTO;
 import com.byy.ticket.order.dto.order.OrderCreateDTO;
 import com.byy.ticket.order.vo.order.OrderDetailVO;
+import com.byy.ticket.order.vo.order.OrderPaymentVO;
 import com.byy.ticket.order.web.OrderIdentityResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +19,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 订单创建、归属查询和预览入口；创建返回 202 表示库存结果尚在核对，200 表示已有明确状态。
+ * 订单创建、归属查询、发起支付和预览入口；创建202表示库存待核对，200表示已有明确状态。
  */
 @RestController
 @RequestMapping("/api/orders")
@@ -47,6 +48,12 @@ public class OrderController {
     @GetMapping("/{orderNo}")
     public Result<OrderDetailVO> getOrder(@PathVariable String orderNo, HttpServletRequest request) {
         return Result.success(orderService.getOrder(identity.requireUser(request), orderNo));
+    }
+
+    /** POST /api/orders/{orderNo}/payments：只提交订单编号，从订单快照创建支付单。 */
+    @PostMapping("/{orderNo}/payments")
+    public Result<OrderPaymentVO> createPayment(@PathVariable String orderNo, HttpServletRequest request) {
+        return Result.success(orderService.createPayment(identity.requireUser(request), orderNo));
     }
 
     /**

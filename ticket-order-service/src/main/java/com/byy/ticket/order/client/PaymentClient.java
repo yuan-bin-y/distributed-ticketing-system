@@ -1,0 +1,160 @@
+package com.byy.ticket.order.client;
+
+import com.byy.ticket.common.result.Result;
+import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.order.client.dto.PaymentCreateRequest;
+import com.byy.ticket.order.client.dto.PaymentResponse;
+import com.byy.ticket.order.client.exception.PaymentServiceCallException;
+import com.byy.ticket.order.client.exception.PaymentServiceCallException.Reason;
+import com.byy.ticket.order.config.PaymentClientProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.cloud.client.loadbalancer.LoadBalanced;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
+import org.springframework.http.converter.HttpMessageConversionException;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.*;
+import java.math.BigDecimal;
+import java.net.SocketTimeoutException;
+import java.net.http.HttpTimeoutException;
+import java.time.LocalDateTime;
+import java.util.Set;
+import java.util.concurrent.TimeoutException;
+
+/** 订单到支付的HTTP创建调用；按服务名发现实例、传播trace、检查响应，不自动重试写请求。 */
+@Component
+public class PaymentClient {
+    private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999999999.99");
+    private static final ParameterizedTypeReference<Result<PaymentResponse>> RESPONSE_TYPE =
+            new ParameterizedTypeReference<>() { };
+    private static final ParameterizedTypeReference<Result<Object>> ERROR_TYPE =
+            new ParameterizedTypeReference<>() { };
+    private final RestClient restClient;
+
+    /** 注入支付专用Builder，服务名由LoadBalancer解析成实例地址。 */
+    public PaymentClient(@LoadBalanced @Qualifier("paymentRestClientBuilder") RestClient.Builder builder,
+                         PaymentClientProperties properties) {
+        restClient = builder.clone().baseUrl("http://" + properties.serviceId()).build();
+    }
+
+    /** 创建或取回同一订单的支付单；核对用户、金额和期限，未知结果只能用原参数核对或重试。 */
+    public PaymentResponse createPayment(PaymentCreateRequest request) {
+        validateRequest(request);
+        try {
+            return restClient.post().uri("/internal/payments")
+                    .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
+                    .header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate())
+                    .body(request)
+                    .exchange((sent, received) -> {
+                        int status = received.getStatusCode().value();
+                        if (received.getStatusCode().is5xxServerError()) {
+                            throw new PaymentServiceCallException(Reason.UNAVAILABLE,
+                                    "支付服务暂时不可用，支付单可能已创建，请使用原订单编号重试");
+                        }
+                        if (status == 400 || status == 409) {
+                            Result<Object> error = received.bodyTo(ERROR_TYPE);
+                            String expected = status == 400 ? "BAD_REQUEST" : "CONFLICT";
+                            if (error == null || !expected.equals(error.code())) {
+                                throw invalidResponse("支付服务错误响应不符合约定");
+                            }
+                            if (status == 400) {
+                                throw new IllegalArgumentException("支付服务拒绝了订单支付参数");
+                            }
+                            throw new PaymentServiceCallException(Reason.CONFLICT,
+                                    "支付单已到期或同一订单的支付参数不一致");
+                        }
+                        // 创建接口没有合法404业务结果；重定向和其他4xx均按契约错误处理。
+                        if (!received.getStatusCode().is2xxSuccessful()) {
+                            throw invalidResponse("支付服务HTTP状态不符合预期");
+                        }
+                        Result<PaymentResponse> result = received.bodyTo(RESPONSE_TYPE);
+                        if (result == null || !"OK".equals(result.code())
+                                || !validResponse(result.data()) || !matches(result.data(), request)) {
+                            throw invalidResponse("支付单响应不完整或与原订单快照不一致");
+                        }
+                        return result.data();
+                    });
+        } catch (ResourceAccessException exception) {
+            boolean timeout = isTimeout(exception);
+            throw new PaymentServiceCallException(timeout ? Reason.TIMEOUT : Reason.UNAVAILABLE,
+                    timeout ? "支付服务调用超时，支付单可能已创建，请使用原订单编号重试"
+                            : "支付服务连接失败，请使用原订单编号核对或重试", exception);
+        } catch (IllegalStateException exception) {
+            if (exception.getMessage() != null && exception.getMessage().startsWith("No instances available for ")) {
+                throw new PaymentServiceCallException(Reason.UNAVAILABLE, "支付服务没有可用实例", exception);
+            }
+            throw exception;
+        } catch (RestClientException | HttpMessageConversionException exception) {
+            if (isTimeout(exception)) {
+                throw new PaymentServiceCallException(Reason.TIMEOUT,
+                        "支付响应读取超时，支付单可能已创建，请使用原订单编号重试", exception);
+            }
+            throw new PaymentServiceCallException(Reason.INVALID_RESPONSE,
+                    "支付服务响应解析失败，请使用原订单编号核对", exception);
+        }
+    }
+
+    /** 校验订单侧请求，不要求期限仍在未来，让底层Client保留过期幂等核对能力。 */
+    private void validateRequest(PaymentCreateRequest request) {
+        if (request == null || !validNo(request.orderNo()) || request.userId() == null || request.userId() < 1
+                || !validAmount(request.amount()) || !validTime(request.expiresAt())) {
+            throw new IllegalArgumentException("订单支付快照参数不正确");
+        }
+    }
+
+    /** 检查支付事实的状态与时间组合，避免把不完整或矛盾的结果返回用户。 */
+    private boolean validResponse(PaymentResponse response) {
+        if (response == null || !validNo(response.paymentNo()) || !validNo(response.orderNo())
+                || response.userId() == null || response.userId() < 1 || !validAmount(response.amount())
+                || !validTime(response.expiresAt()) || !validTime(response.createdAt())) {
+            return false;
+        }
+        if ("CREATED".equals(response.status())) {
+            return response.paidAt() == null && "NONE".equals(response.notifyStatus())
+                    && response.reversalNo() == null && response.reversalStatus() == null;
+        }
+        if (!"SUCCESS".equals(response.status()) || !validTime(response.paidAt())
+                || !response.paidAt().isBefore(response.expiresAt())
+                || !Set.of("PENDING", "DELIVERED").contains(response.notifyStatus() == null ? "" : response.notifyStatus())) {
+            return false;
+        }
+        return response.reversalNo() == null && response.reversalStatus() == null
+                || validNo(response.reversalNo())
+                && Set.of("PENDING", "SUCCESS").contains(response.reversalStatus() == null ? "" : response.reversalStatus());
+    }
+
+    /** 确认创建响应属于同一订单、用户、金额和原期限，金额按数值比较。 */
+    private boolean matches(PaymentResponse response, PaymentCreateRequest request) {
+        return request.orderNo().equals(response.orderNo()) && request.userId().equals(response.userId())
+                && request.amount().compareTo(response.amount()) == 0
+                && request.expiresAt().equals(response.expiresAt());
+    }
+
+    /** 编号采用32位小写十六进制。 */
+    private boolean validNo(String value) { return value != null && value.matches("[0-9a-f]{32}"); }
+
+    /** 金额必须能无损保存至支付库。 */
+    private boolean validAmount(BigDecimal value) {
+        return value != null && value.signum() > 0 && value.scale() <= 2 && value.compareTo(MAX_AMOUNT) <= 0;
+    }
+
+    /** 时间必须在MySQL范围且精度不超过毫秒，与跨服务数据库快照一致。 */
+    private boolean validTime(LocalDateTime value) {
+        return value != null && value.getYear() >= 1000 && value.getYear() <= 9999
+                && value.getNano() % 1_000_000 == 0;
+    }
+
+    /** 向外保留响应契约错误分类。 */
+    private PaymentServiceCallException invalidResponse(String message) {
+        return new PaymentServiceCallException(Reason.INVALID_RESPONSE, message);
+    }
+
+    /** 沿cause链识别连接或正文转换器包装的超时。 */
+    private boolean isTimeout(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+            if (cause instanceof HttpTimeoutException || cause instanceof SocketTimeoutException
+                    || cause instanceof TimeoutException) { return true; }
+        }
+        return false;
+    }
+}

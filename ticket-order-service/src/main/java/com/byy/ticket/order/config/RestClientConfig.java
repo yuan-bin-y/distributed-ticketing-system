@@ -11,11 +11,11 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 /**
- * 为活动、库存两个远程服务分别创建 RestClient.Builder，配置连接和读取超时。
- * LoadBalanced 标记启用服务名解析；Qualifier 区分两个 Builder，避免注入混淆。
+ * 为活动、库存、支付分别创建 RestClient.Builder，配置各自连接和读取超时。
+ * LoadBalanced 启用服务名解析；Qualifier 区分 Builder，避免注入混淆。
  */
 @Configuration
-@EnableConfigurationProperties({EventClientProperties.class, InventoryClientProperties.class})
+@EnableConfigurationProperties({EventClientProperties.class, InventoryClientProperties.class, PaymentClientProperties.class})
 public class RestClientConfig {
     /**
      * 创建专门调用活动服务的 Builder，使用活动客户端的超时配置并启用负载均衡。
@@ -34,6 +34,14 @@ public class RestClientConfig {
     @LoadBalanced
     public RestClient.Builder inventoryRestClientBuilder(
             RestClientBuilderConfigurer configurer, InventoryClientProperties properties) {
+        return createBuilder(configurer, properties.connectTimeout(), properties.readTimeout());
+    }
+
+    /** 创建支付专用Builder，复用相同的超时工厂并启用服务名负载均衡。 */
+    @Bean
+    @LoadBalanced
+    public RestClient.Builder paymentRestClientBuilder(
+            RestClientBuilderConfigurer configurer, PaymentClientProperties properties) {
         return createBuilder(configurer, properties.connectTimeout(), properties.readTimeout());
     }
 

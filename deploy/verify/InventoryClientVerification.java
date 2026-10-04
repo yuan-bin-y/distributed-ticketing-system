@@ -64,7 +64,7 @@ public class InventoryClientVerification {
         @Bean
         OrderServiceImpl orderService(EventClient event, InventoryClient inventory, Clock clock,
                                       OrderWorkflowProperties properties) {
-            return new OrderServiceImpl(event, inventory, clock, null, null, null, null, properties);
+            return new OrderServiceImpl(event, inventory, clock, null, null, null, null, properties, null);
         }
     }
     private static final String TRACE = "0123456789abcdef0123456789abcdef";
