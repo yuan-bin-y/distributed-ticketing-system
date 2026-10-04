@@ -19,7 +19,7 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
     /** 保存付款依据、调整状态并废止旧任务令牌；旧关单任务不能覆盖新状态。 */
     @Update("""
             UPDATE t_order SET payment_no=#{paymentNo},paid_at=#{paidAt},status=#{status},
-                last_error=#{error},lease_token=NULL,lease_until=NULL
+                last_error=#{error},next_attempt_at=CURRENT_TIMESTAMP(3),lease_token=NULL,lease_until=NULL
             WHERE id=#{id}
             """)
     int savePayment(@Param("id") Long id, @Param("paymentNo") String paymentNo,
@@ -36,7 +36,7 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
     /** 有索引且限量扫描到期任务；已被领取且租约未到期的任务不重复领取。 */
     @Select("""
             SELECT id FROM t_order
-             WHERE status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING')
+             WHERE status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING')
                AND next_attempt_at <= CURRENT_TIMESTAMP(3)
                AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP(3))
              ORDER BY next_attempt_at, id LIMIT #{limit}
@@ -48,7 +48,7 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
             UPDATE t_order SET lease_token = #{token},
                 lease_until = TIMESTAMPADD(MICROSECOND, #{leaseMicros}, CURRENT_TIMESTAMP(3)),
                 attempt_count = attempt_count + 1
-             WHERE id = #{id} AND status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING')
+             WHERE id = #{id} AND status IN ('STOCK_PENDING','PENDING_PAYMENT','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING')
                AND next_attempt_at <= CURRENT_TIMESTAMP(3)
                AND (lease_until IS NULL OR lease_until <= CURRENT_TIMESTAMP(3))
             """)
@@ -61,6 +61,22 @@ public interface OrderMapper extends BaseMapper<TicketOrder> {
             """)
     int beginClosing(@Param("id") Long id, @Param("token") String token,
                      @Param("expected") String expected, @Param("reservationId") String reservationId);
+
+    /** 先保存冲正步骤和固定原因再调用支付；清除领取令牌，让下一次任务执行这一新步骤。 */
+    @Update("""
+            UPDATE t_order SET status='REVERSAL_PENDING',reversal_reason=#{reason},
+                next_attempt_at=CURRENT_TIMESTAMP(3),last_error=NULL,lease_token=NULL,lease_until=NULL
+            WHERE id=#{id} AND lease_token=#{token} AND status='PAYMENT_CONFIRMING'
+            """)
+    int scheduleReversal(@Param("id") Long id, @Param("token") String token, @Param("reason") String reason);
+
+    /** 已核实冲正成功才保存终态；旧任务或重复通知不得覆盖新状态。 */
+    @Update("""
+            UPDATE t_order SET status='REVERSED',reversal_no=#{reversalNo},last_error=NULL,
+                lease_token=NULL,lease_until=NULL
+            WHERE id=#{id} AND lease_token=#{token} AND status='REVERSAL_PENDING'
+            """)
+    int finishReversal(@Param("id") Long id, @Param("token") String token, @Param("reversalNo") String reversalNo);
 
     /** 带令牌与前置状态完成当前步骤，旧领取者不能覆盖新领取者或已推进的订单。 */
     @Update("""

@@ -17,7 +17,7 @@ public class OrderPaymentReceiptTransaction {
     /** 注入订单自己的 Mapper。 */
     public OrderPaymentReceiptTransaction(OrderMapper orders) { this.orders = orders; }
 
-    /** 与超时关闭的条件更新竞争；已关闭或正在关闭的订单只保留证据供后续补偿。 */
+    /** 与超时关闭竞争；有原预留编号的付款进入库存核对，重复通知不重置后台进度。 */
     @Transactional
     public PaymentReceiptVO accept(PaymentResponse payment) {
         var order = orders.selectByNoForUpdate(payment.orderNo());
@@ -34,14 +34,13 @@ public class OrderPaymentReceiptTransaction {
             throw new OrderConflictException("订单已记录不同付款依据");
         }
         boolean reversed = payment.reversalNo() != null;
-        if (order.getPaymentNo() != null && !reversed) {
+        if (order.getPaymentNo() != null && (!reversed || !OrderStatus.PAID.name().equals(order.getStatus()))) {
             return new PaymentReceiptVO(order.getOrderNo(), order.getPaymentNo(), true);
         }
-        boolean payable = OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())
-                && order.getReservationId() != null;
-        String target = payable && !reversed ? OrderStatus.PAYMENT_CONFIRMING.name()
-                : OrderStatus.REVIEW_REQUIRED.name();
-        String error = payable && !reversed ? null : "付款与关闭、库存或冲正状态需核对；付款依据已保存";
+        boolean canReconcile = order.getReservationId() != null
+                && !OrderStatus.PAID.name().equals(order.getStatus());
+        String target = canReconcile ? OrderStatus.PAYMENT_CONFIRMING.name() : OrderStatus.REVIEW_REQUIRED.name();
+        String error = canReconcile ? null : "付款缺少预留依据或已成交后出现外部冲正，需人工核对";
         if (orders.savePayment(order.getId(), payment.paymentNo(), payment.paidAt(), target, error) != 1) {
             throw new IllegalStateException("付款依据保存失败");
         }

@@ -4,7 +4,7 @@
 
 本阶段实现订单数据库、正式下单与归属查询、固定参数的库存预留、持久化退避和多实例任务领取、订单到期后的幂等释放。订单预览和原内部库存演示接口保留。
 
-每张订单只买一个票档，可以买多张。限购目前检查本次数量，尚未统计用户累计购买。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；关闭竞争进入 REVIEW_REQUIRED。库存确认与自动冲正仍待完成，没有MQ或Outbox。
+每张订单只买一个票档，可以买多张。限购目前检查本次数量，尚未统计用户累计购买。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；后续库存确认与关闭竞争处理见 [成交与冲正恢复](payment-fulfillment.md)，成交为PAID，无法履约冲正为REVERSED。没有MQ或Outbox。
 
 ## 启动与手动使用
 
@@ -74,7 +74,7 @@ X-Dev-User-Id: 1
 
 next_attempt_at、attempt_count、last_error 保存重试进度。指数退避默认 5 秒至 5 分钟，不在请求线程 sleep。任务扫描使用状态和时间索引，每轮最多 20 条。
 
-claim 的条件更新领取 lease_token，记录 lease_until。进程退出后租约到期可重新领取；完成 SQL 必须同时匹配前置状态和当前令牌，旧进程不能覆盖新领取者的进度。租约默认 30 秒，配置校验要求覆盖两次库存 HTTP 超时并留出 5 秒余量。库存幂等仍是必要保护，租约本身不能取消迟到的 HTTP 请求。
+claim 的条件更新领取 lease_token，记录 lease_until。进程退出后租约到期可重新领取；完成 SQL 必须同时匹配前置状态和当前令牌，旧进程不能覆盖新领取者的进度。租约默认 60 秒，配置校验要求覆盖两次库存及两次支付 HTTP 超时并留出 5 秒余量。库存幂等仍是必要保护，租约本身不能取消迟到的 HTTP 请求。
 
 后台每张订单生成独立 traceId 并清理 MDC，日志包含 orderNo；跨服务 Client 传播 traceId。REVIEW_REQUIRED 输出错误日志。运维告警平台及人工恢复接口按后续阶段接入，不能宣称已完成自动处理所有异常。
 
@@ -88,7 +88,7 @@ claim 的条件更新领取 lease_token，记录 lease_until。进程退出后�
 | ORDER_RECOVERY_ENABLED | true | 后台恢复与到期任务开关 |
 | ORDER_RECOVERY_DELAY_MS | 5000 | 每轮完成后的等待毫秒数 |
 | ticket.order.batch-size | 20 | 每轮最大条数，1 到 100 |
-| ticket.order.lease-duration | 30s | 多实例领取租约 |
+| ticket.order.lease-duration | 60s | 多实例领取租约 |
 | ticket.order.retry-base / retry-max | 5s / 5m | 持久化指数退避 |
 
 关闭恢复任务后，处理中订单和到期订单不会自动推进；重新开启后读取原数据库记录继续处理。
@@ -112,4 +112,4 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl 'ticket-order-service,ticket-invent
 
 ## 后续接入 MQ 的位置
 
-订单状态机与库存幂等会继续保留。支付HTTP创建、可靠通知与依据保存已接入，下一步实现库存确认和迟到支付补偿；先完成第一版HTTP闭环，再增加Outbox、可靠消息发布和幂等消费。到期消息可以触发同一推进逻辑，数据库核对任务负责补漏。当前代码没有MQ发布或消费，不能将本阶段描述为完整支付Saga。
+订单状态机与库存幂等会继续保留。支付HTTP创建、可靠通知与依据保存已接入，库存确认和无法履约冲正恢复见 [成交与冲正恢复](payment-fulfillment.md)；后续增加Outbox、可靠消息发布和幂等消费。到期消息可以触发同一推进逻辑，数据库核对任务负责补漏。当前代码没有MQ发布或消费，不能将本阶段描述为完整支付Saga。

@@ -66,6 +66,12 @@ public class OrderWorkflowVerification {
         event = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         event.setExecutor(executor);
         event.createContext("/", exchange -> {
+            // 未付款关闭现在会查询支付服务；本旧下单验证使用明确不存在的支付查询桩。
+            if (exchange.getRequestURI().getPath().startsWith("/internal/payments/by-order/")) {
+                byte[] error = "{\"code\":\"RESOURCE_NOT_FOUND\",\"data\":null}".getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().set("Content-Type", "application/json");
+                exchange.sendResponseHeaders(404, error.length);exchange.getResponseBody().write(error);exchange.close();return;
+            }
             Matcher matcher = Pattern.compile("/internal/ticket-tiers/(\\d+)/purchase-rule").matcher(exchange.getRequestURI().getPath());
             if (!matcher.matches()) { exchange.sendResponseHeaders(404, -1); exchange.close(); return; }
             long tier = Long.parseLong(matcher.group(1));
@@ -301,6 +307,8 @@ public class OrderWorkflowVerification {
                 "--spring.cloud.discovery.client.simple.instances.ticket-inventory-service[0].uri="
                         + base(proxy.getAddress().getPort()),
                 "--spring.cloud.discovery.client.simple.instances.ticket-event-service[0].uri="
+                        + base(event.getAddress().getPort()),
+                "--spring.cloud.discovery.client.simple.instances.ticket-payment-service[0].uri="
                         + base(event.getAddress().getPort())), orderSchema);
     }
 

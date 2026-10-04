@@ -2,9 +2,9 @@
 
 ## 当前范围
 
-ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务已经可靠发送成功通知，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING；库存尚未确认，见 [付款通知](payment-notification.md)。
+ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务已经可靠发送成功通知，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后续确认库存或恢复冲正见 [成交与冲正恢复](payment-fulfillment.md)。
 
-当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后停止原未付款关闭任务；关闭竞争或冲正事实进入 REVIEW_REQUIRED，后续必须完成库存确认与冲正恢复，才形成完整履约流程。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
+当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后进入库存确认；关闭竞争根据原库存终态成交或全额模拟冲正，矛盾事实进入 REVIEW_REQUIRED。订单模拟支付交易链路已接通，电子票尚未生成。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
 
 ## 启动
 
@@ -136,4 +136,4 @@ mvn "-Dmaven.repo.local=$PWD/target/.m2" -pl ticket-payment-service -am package
 
 ## 下一阶段
 
-订单的创建支付入口、可靠付款通知和付款依据已经接入，正常状态为 PAYMENT_CONFIRMING。下一步增加库存确认、PAID及冲正恢复，协调confirm/release竞争和迟到支付。完成HTTP业务闭环后，再接入MQ + Outbox。
+订单的创建支付入口、可靠付款通知和付款依据已经接入，正常状态为 PAYMENT_CONFIRMING。库存确认、PAID及冲正恢复已接入，协调confirm/release竞争和迟到支付，见 [成交与冲正恢复](payment-fulfillment.md)。完成HTTP业务闭环后，再接入MQ + Outbox。

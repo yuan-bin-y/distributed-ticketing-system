@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-/** 调度持久化库存恢复与未支付订单到期关闭；未来 MQ 触发也复用同一状态推进逻辑。 */
+/** 调度库存预留、未付款到期关闭、付款确认及冲正恢复；未来 MQ 触发也复用同一推进逻辑。 */
 @Component
 public class OrderStockReconcileJob {
     private static final Logger log = LoggerFactory.getLogger(OrderStockReconcileJob.class);

@@ -29,7 +29,7 @@ ticket:
     recovery-delay-ms: ${ORDER_RECOVERY_DELAY_MS:5000}
     recovery-enabled: ${ORDER_RECOVERY_ENABLED:true}
     batch-size: 20
-    lease-duration: 30s
+    lease-duration: 60s
     retry-base: 5s
     retry-max: 5m
   clients:

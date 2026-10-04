@@ -4,6 +4,8 @@ import com.byy.ticket.common.result.Result;
 import com.byy.ticket.common.trace.TraceIdContext;
 import com.byy.ticket.order.client.dto.PaymentCreateRequest;
 import com.byy.ticket.order.client.dto.PaymentResponse;
+import com.byy.ticket.order.client.dto.PaymentReversalRequest;
+import com.byy.ticket.order.client.dto.PaymentReversalResponse;
 import com.byy.ticket.order.client.exception.PaymentServiceCallException;
 import com.byy.ticket.order.client.exception.PaymentServiceCallException.Reason;
 import com.byy.ticket.order.config.PaymentClientProperties;
@@ -24,6 +26,54 @@ import java.util.concurrent.TimeoutException;
 /** 订单到支付的HTTP创建调用；按服务名发现实例、传播trace、检查响应，不自动重试写请求。 */
 @Component
 public class PaymentClient {
+    /** 幂等全额冲正；核对原付款、订单、金额和首次原因，不自动重复发送 POST。 */
+    public PaymentReversalResponse reverse(PaymentReversalRequest request, String orderNo, BigDecimal amount) {
+        if (request == null || !validNo(request.paymentNo()) || !validNo(orderNo) || !validAmount(amount)
+                || request.reason() == null || request.reason().isBlank() || request.reason().length() > 256) {
+            throw new IllegalArgumentException("冲正快照参数不正确");
+        }
+        try {
+            return restClient.post().uri("/internal/payment-reversals")
+                    .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
+                    .header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate()).body(request)
+                    .exchange((sent, received) -> {
+                        int status = received.getStatusCode().value();
+                        if (status == 409) {
+                            Result<Object> error = received.bodyTo(ERROR_TYPE);
+                            if (error == null || !"CONFLICT".equals(error.code())) { throw invalidResponse("冲正冲突响应异常"); }
+                            throw new PaymentServiceCallException(Reason.CONFLICT, "支付冲正参数或状态冲突，需核对");
+                        }
+                        // 默认模拟开关关闭时也会返回404；保留待冲正状态，待配置恢复后重试。
+                        if (status == 404 || received.getStatusCode().is5xxServerError()) {
+                            throw new PaymentServiceCallException(Reason.UNAVAILABLE, "冲正服务暂时不可用或模拟开关未开启");
+                        }
+                        if (!received.getStatusCode().is2xxSuccessful()) { throw invalidResponse("冲正HTTP状态异常"); }
+                        var type = new ParameterizedTypeReference<Result<PaymentReversalResponse>>() { };
+                        var result = received.bodyTo(type);
+                        var value = result == null ? null : result.data();
+                        if (result == null || !"OK".equals(result.code()) || value == null
+                                || !validNo(value.reversalNo()) || !request.paymentNo().equals(value.paymentNo())
+                                || !orderNo.equals(value.orderNo()) || value.amount() == null
+                                || amount.compareTo(value.amount()) != 0 || !request.reason().equals(value.reason())
+                                || !"SUCCESS".equals(value.status()) || !validTime(value.completedAt())
+                                || !validTime(value.createdAt())) {
+                            throw invalidResponse("冲正结果不完整或归属错误");
+                        }
+                        return value;
+                    });
+        } catch (ResourceAccessException exception) {
+            throw new PaymentServiceCallException(isTimeout(exception) ? Reason.TIMEOUT : Reason.UNAVAILABLE,
+                    "冲正调用失败，可能已执行，请使用原编号核对", exception);
+        } catch (IllegalStateException exception) {
+            if (exception.getMessage() != null && exception.getMessage().startsWith("No instances available for ")) {
+                throw new PaymentServiceCallException(Reason.UNAVAILABLE, "支付服务没有可用实例", exception);
+            }
+            throw exception;
+        } catch (RestClientException | HttpMessageConversionException exception) {
+            throw new PaymentServiceCallException(isTimeout(exception) ? Reason.TIMEOUT : Reason.INVALID_RESPONSE,
+                    "冲正响应读取失败，可能已执行，请核对", exception);
+        }
+    }
     /** 根据原订单查询权威支付事实；通知中的成功标记和金额不能作为付款依据。 */
     public PaymentResponse getByOrder(String orderNo) {
         if (!validNo(orderNo)) { throw new IllegalArgumentException("订单编号不正确"); }

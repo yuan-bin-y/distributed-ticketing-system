@@ -22,7 +22,7 @@ public record OrderWorkflowProperties(boolean devIdentityEnabled, Duration payme
         paymentWindow = paymentWindow == null ? Duration.ofMinutes(15) : paymentWindow;
         recoveryEnabled = recoveryEnabled == null ? true : recoveryEnabled;
         batchSize = batchSize == null ? 20 : batchSize;
-        leaseDuration = leaseDuration == null ? Duration.ofSeconds(30) : leaseDuration;
+        leaseDuration = leaseDuration == null ? Duration.ofSeconds(60) : leaseDuration;
         retryBase = retryBase == null ? Duration.ofSeconds(5) : retryBase;
         retryMax = retryMax == null ? Duration.ofMinutes(5) : retryMax;
         if (paymentWindow.compareTo(Duration.ofSeconds(1)) < 0 || paymentWindow.compareTo(Duration.ofDays(1)) > 0

@@ -30,6 +30,10 @@ public class TicketOrder {
     private String paymentNo;
     /** 首次付款成功时间，不采用通知抵达时间。 */
     private LocalDateTime paidAt;
+    /** 冲正首次发起的固定原因，重试不得改变。 */
+    private String reversalReason;
+    /** 支付服务返回并核实的冲正编号。 */
+    private String reversalNo;
     /** 固定的支付截止时间，重试不得重算。 */
     private LocalDateTime expiresAt;
     /** 下一次恢复或到期检查时间。 */

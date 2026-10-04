@@ -366,7 +366,7 @@ public class OrderPaymentVerification {
         if(admin!=null) {
             try(var sql=admin.createStatement()) {
                 for(String schema:createdSchemas) {
-                    if(!schema.matches("ticket_(order_pay|payment_chain)_verify_[0-9a-f]{32}"))
+                    if(!schema.matches("ticket_(order_pay|payment_chain|stock_pay)_verify_[0-9a-f]{32}"))
                         throw new IllegalStateException("Unsafe cleanup schema");
                     sql.execute("DROP DATABASE "+schema);
                 }

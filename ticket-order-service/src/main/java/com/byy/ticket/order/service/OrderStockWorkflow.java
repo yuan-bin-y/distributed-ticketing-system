@@ -21,7 +21,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
 /**
- * 下单与到期恢复状态机。每条 SQL 使用短本地事务，HTTP 在数据库事务外执行。
+ * 下单、到期、付款履约恢复状态机。每条 SQL 使用短本地事务，HTTP 在数据库事务外执行。
  * 请求、恢复任务共用此流程；领取令牌防止旧任务覆盖新进度，库存幂等防止重复扣减。
  */
 @Service
@@ -32,15 +32,17 @@ public class OrderStockWorkflow {
     private final InventoryClient inventory;
     private final OrderWorkflowProperties properties;
     private final Clock clock;
+    private final OrderPaymentFulfillment fulfillment;
 
-    /** 注入订单持久化、库存 HTTP 客户端、配置和业务时钟。 */
+    /** 注入订单持久化、库存客户端、付款履约步骤、配置和业务时钟。 */
     public OrderStockWorkflow(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
-                              OrderWorkflowProperties properties, Clock clock) {
+                              OrderWorkflowProperties properties, Clock clock, OrderPaymentFulfillment fulfillment) {
         this.orders = orders;
         this.items = items;
         this.inventory = inventory;
         this.properties = properties;
         this.clock = clock;
+        this.fulfillment = fulfillment;
     }
 
     /** 按截止时间限量扫描，单条失败不会阻断后续订单；多实例再通过 claim 竞争领取。 */
@@ -66,13 +68,18 @@ public class OrderStockWorkflow {
         try {
             if (OrderStatus.STOCK_PENDING.name().equals(order.getStatus())) {
                 reserve(order, token);
+            } else if (OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
+                fulfillment.confirm(order, token);
+            } else if (OrderStatus.REVERSAL_PENDING.name().equals(order.getStatus())) {
+                fulfillment.reverse(order, token);
             } else {
                 close(order, token);
             }
         } catch (IllegalArgumentException | ResourceNotFoundException exception) {
             rejectOrRetry(order, token, exception);
         } catch (InventoryServiceCallException exception) {
-            if (exception.getReason() == InventoryServiceCallException.Reason.CONFLICT) {
+            if (exception.getReason() == InventoryServiceCallException.Reason.CONFLICT
+                    && !OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
                 rejectOrRetry(order, token, exception);
             } else {
                 retry(order, token, exception);
@@ -116,6 +123,7 @@ public class OrderStockWorkflow {
             complete(order, token, OrderStatus.REVIEW_REQUIRED, null, "关闭订单缺少预留编号");
             return;
         }
+        if (fulfillment.recordPaymentBeforeClose(order)) { return; }
         if (!OrderStatus.CLOSING.name().equals(order.getStatus())) {
             if (orders.beginClosing(order.getId(), token, order.getStatus(), order.getReservationId()) != 1) { return; }
             order.setStatus(OrderStatus.CLOSING.name());

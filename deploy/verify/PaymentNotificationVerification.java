@@ -46,7 +46,7 @@ public class PaymentNotificationVerification extends OrderPaymentVerification {
         waitPing(paymentProcess,paymentPort,"/api/payments/ping"); stop(paymentProcess);
         orderProcess=launchOrder(List.of());waitPing(orderProcess,orderPort,"/api/orders/ping");
         paymentProcess=launchPayment(paymentPort,List.of());waitPing(paymentProcess,paymentPort,"/api/payments/ping");
-        check(scalar(orderDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==2,"order V1 upgraded to V2");
+        check(scalar(orderDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==3,"order V1 upgraded to V3");
         check(scalar(paymentDb,"SELECT COUNT(*) FROM flyway_schema_history WHERE success=1")==2,"payment V1 upgraded to V2");
         normal(); duplicateAndForgery(); failedAndLost(); rollback(); closeCompetition(); restartAndConcurrency();
     }
@@ -146,7 +146,7 @@ public class PaymentNotificationVerification extends OrderPaymentVerification {
             String oldToken=newNo();
             update(orderDb,"UPDATE t_order SET status='"+state+"',lease_token='"+oldToken+"' WHERE order_no=?",order);
             check(notify(order,number).statusCode()==200,"late notification accepted for "+state);
-            check(orderStatus(order).equals("REVIEW_REQUIRED"),"closed/closing order not revived or falsely paid");
+            check(orderStatus(order).equals("PAYMENT_CONFIRMING"),"closed/closing order proceeds to stock reconciliation, not falsely paid");
             check(text(orderDb,"SELECT payment_no FROM t_order WHERE order_no=?",order).equals(number),"late payment evidence retained");
             check(text(orderDb,"SELECT lease_token FROM t_order WHERE order_no=?",order)==null,"old closer token invalidated");
             try(var sql=orderDb.prepareStatement("UPDATE t_order SET status='CLOSED' WHERE order_no=? AND lease_token=? AND status='CLOSING'")) {
@@ -162,7 +162,7 @@ public class PaymentNotificationVerification extends OrderPaymentVerification {
         String order=fixture("PENDING_PAYMENT",1L,true,now().plusMinutes(5));String number=create(order);pay(number);
         check(request("POST",paymentPort,"/internal/payment-reversals",null,
                 "{\"paymentNo\":\""+number+"\",\"reason\":\"verification\"}").statusCode()==200,"reversal fact created");
-        check(notify(order,number).statusCode()==200&&orderStatus(order).equals("REVIEW_REQUIRED"),"reversed payment cannot confirm sale");
+        check(notify(order,number).statusCode()==200&&orderStatus(order).equals("PAYMENT_CONFIRMING"),"reversed payment proceeds to stock reconciliation, not falsely paid");
         notificationFault.set("PASS");
         System.out.println("PASS closing competition, stale lease and reversal evidence");
     }

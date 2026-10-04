@@ -2,7 +2,7 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务和支付服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING；库存确认与自动冲正仍待接入。Auth、累计限购、出票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务和支付服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。Auth、累计限购、出票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)。
 
 ## 订单下单与恢复
 
@@ -18,11 +18,11 @@ Auth 尚未接入，新入口默认需要可信身份。仅本地学习可设置
 
 `ticket-payment-service` 默认端口 `8064`，沿用 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`，首次启动自动创建 `ticket_payment`；Flyway 建立 `t_payment`、`t_payment_reversal` 及迁移历史表。运行类为 `com.byy.ticket.payment.TicketPaymentApplication`。
 
-默认模拟成功和冲正关闭。仅本地演示在 Payment 运行配置中设置 `PAYMENT_SIMULATION_ENABLED=true;PAYMENT_DEV_IDENTITY_ENABLED=true`，公共接口带 `X-Dev-User-Id: 1`。创建单、查询和冲正由内部接口提供；网关只路由 `/api/payments/**`，不转发内部路径。支付成功和待通知状态原子保存，后台可靠通知订单并恢复失败任务；订单保存依据后进入 PAYMENT_CONFIRMING，关闭竞争或冲正事实进入 REVIEW_REQUIRED。DELIVERED 不代表成交，库存确认与自动冲正尚未完成。完整接口和阅读顺序见 [支付服务](docs/payment-service.md)、[付款通知](docs/payment-notification.md)。
+默认模拟成功和冲正关闭。仅本地演示在 Payment 运行配置中设置 `PAYMENT_SIMULATION_ENABLED=true;PAYMENT_DEV_IDENTITY_ENABLED=true`，公共接口带 `X-Dev-User-Id: 1`。创建单、查询和冲正由内部接口提供；网关只路由 `/api/payments/**`，不转发内部路径。支付成功和待通知状态原子保存，后台可靠通知订单并恢复失败任务；订单保存依据后进入 PAYMENT_CONFIRMING，核对原库存后成交或冲正，矛盾事实进入 REVIEW_REQUIRED。DELIVERED 只表示依据已接收，成交及冲正进度分别由 PAID、REVERSED 表示。完整接口和阅读顺序见 [支付服务](docs/payment-service.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)。
 
 支付模块通过90项真实MySQL、并发、事务回滚、HTTP、重启与Nacos注册检查。验证脚本为 `deploy/verify/verify_payment.ps1 -VerifyNacos`，只使用并清理随机测试库；正式支付库由用户启动时迁移。
 
-订单已新增 `POST /api/orders/{orderNo}/payments`：检查归属、状态、预留和期限，读取原订单金额后经HTTP创建或返回原支付单。创建支付单本身不更新订单为已支付。通知与付款依据见 [付款通知](docs/payment-notification.md)，验证脚本为 `deploy/verify/verify_payment_notification.ps1`。下一步接入库存确认与冲正恢复，MQ + Outbox在第一版HTTP闭环后引入。
+订单已新增 `POST /api/orders/{orderNo}/payments`：检查归属、状态、预留和期限，读取原订单金额后经HTTP创建或返回原支付单。创建支付单本身不更新订单为已支付。通知与付款依据见 [付款通知](docs/payment-notification.md)，验证脚本为 `deploy/verify/verify_payment_notification.ps1`。库存确认与冲正恢复已接入，本次通过122项真实三服务检查，脚本为 `deploy/verify/verify_payment_fulfillment.ps1`。MQ + Outbox按后续学习阶段引入。
 
 ## 第一版目标
 
