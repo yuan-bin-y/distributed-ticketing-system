@@ -24,6 +24,7 @@
         <module>ticket-event-service</module>
         <module>ticket-order-service</module>
         <module>ticket-inventory-service</module>
+        <module>ticket-payment-service</module>
     </modules>
 
     <properties>

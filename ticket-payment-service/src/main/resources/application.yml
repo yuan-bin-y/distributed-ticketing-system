@@ -1,0 +1,26 @@
+server:
+  port: ${PAYMENT_PORT:8064}
+
+spring:
+  application:
+    name: ticket-payment-service
+  datasource:
+    url: "${PAYMENT_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_payment?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
+    username: ${LOCAL_MYSQL_USERNAME}
+    password: ${LOCAL_MYSQL_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    encoding: UTF-8
+    validate-on-migrate: true
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+
+ticket:
+  payment:
+    # 仅在本地显式开启；模拟成功不代表接入真实支付渠道。
+    simulation-enabled: ${PAYMENT_SIMULATION_ENABLED:false}
+    # Auth 接入前，显式开启才接受 X-Dev-User-Id。
+    dev-identity-enabled: ${PAYMENT_DEV_IDENTITY_ENABLED:false}

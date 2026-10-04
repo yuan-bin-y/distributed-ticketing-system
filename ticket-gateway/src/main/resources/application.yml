@@ -28,3 +28,7 @@ spring:
                 # 下单串行查询活动、预留库存，临近到期时还会释放；为这些调用留出返回时间。
                 # 单位为毫秒；依赖超时调整时同步检查此值，客户端超时后仍沿用原幂等键。
                 response-timeout: ${ORDER_GATEWAY_RESPONSE_TIMEOUT_MS:30000}
+            - id: ticket-payment-service
+              uri: lb://ticket-payment-service
+              predicates:
+                - Path=/api/payments/**
