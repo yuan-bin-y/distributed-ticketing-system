@@ -10,6 +10,7 @@
 | --- | --- |
 | [启动指南](docs/v1-startup.md) | 本地依赖、Windows变量、密钥、服务凭证、构建与IDEA启动 |
 | [API演示](docs/v1-demo.md) | 管理员发布、用户下单、重复提交、模拟付款、出票及退出 |
+| [Apifox导入文档](docs/apifox/README.md) | 22个公开接口、13个内部接口，认证配置与变量提取脚本 |
 | [架构与流程](docs/v1-architecture.md) | 服务关系图、完整交易顺序、事务和身份边界 |
 | [技术栈与简历描述](docs/v1-resume.md) | 学习重点、项目介绍和可引用的实测数据 |
 | [功能验收记录](docs/v1-acceptance.md) | 312项功能与故障检查、复现方式 |

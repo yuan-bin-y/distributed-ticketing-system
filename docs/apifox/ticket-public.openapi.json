@@ -1,0 +1,4039 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "分布式票务平台 第一版网关API",
+    "version": "1.0.0",
+    "description": "基于当前源码整理。全部公开请求经过Gateway；用户身份从Bearer JWT及Redis会话取得，不接受正文userId。模拟支付须启用PAYMENT_SIMULATION_ENABLED。202和支付SUCCESS不等于完成出票；查询订单到COMPLETED。时间为东八区LocalDateTime无时区后缀。金额为人民币BigDecimal。传输层及Gateway自身异常可能使用不同于业务Result的错误正文。"
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8060",
+      "description": "本地开发"
+    }
+  ],
+  "security": [
+    {
+      "BearerAuth": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "01 用户认证"
+    },
+    {
+      "name": "06 连通检查"
+    },
+    {
+      "name": "02 活动查询"
+    },
+    {
+      "name": "03 管理员活动"
+    },
+    {
+      "name": "04 订单与票券"
+    },
+    {
+      "name": "05 模拟支付"
+    }
+  ],
+  "paths": {
+    "/api/auth/register": {
+      "post": {
+        "tags": [
+          "01 用户认证"
+        ],
+        "summary": "注册普通用户",
+        "operationId": "registerUser",
+        "description": "公共注册固定USER，不接收管理员角色。不自动登录。密码8至72字符，UTF-8额外最多72字节。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultUserVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterDTO"
+              },
+              "example": {
+                "username": "buyer01",
+                "password": "DemoPassword_123",
+                "nickname": "购票用户"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "01 用户认证"
+        ],
+        "summary": "账号密码登录",
+        "operationId": "login",
+        "description": "用户与管理员使用同一接口，不同账号由Auth返回不同角色的Token。保存data.accessToken和data.refreshToken。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultTokenPairVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginDTO"
+              },
+              "example": {
+                "username": "buyer01",
+                "password": "DemoPassword_123"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/refresh": {
+      "post": {
+        "tags": [
+          "01 用户认证"
+        ],
+        "summary": "轮换刷新凭证",
+        "operationId": "refreshTokens",
+        "description": "请求正文携带Refresh Token；成功后必须保存新的两种Token，旧Refresh不可再次使用。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultTokenPairVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshDTO"
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "tags": [
+          "01 用户认证"
+        ],
+        "summary": "退出当前会话",
+        "operationId": "logout",
+        "description": "无请求正文。撤销当前sid，旧Access与Refresh失效；不撤销其他登录会话。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultVoid"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/auth/ping": {
+      "get": {
+        "tags": [
+          "06 连通检查"
+        ],
+        "summary": "Auth连通检查",
+        "operationId": "authPing",
+        "description": "Auth连通检查",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultPing"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "security": []
+      }
+    },
+    "/api/events": {
+      "get": {
+        "tags": [
+          "02 活动查询"
+        ],
+        "summary": "已发布活动分页",
+        "operationId": "listEvents",
+        "description": "已发布活动分页",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventPageVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "pageSize",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "security": []
+      }
+    },
+    "/api/events/{eventId}": {
+      "get": {
+        "tags": [
+          "02 活动查询"
+        ],
+        "summary": "已发布活动详情",
+        "operationId": "getEvent",
+        "description": "已发布活动详情",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventDetailVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "security": []
+      }
+    },
+    "/api/events/{eventId}/sessions": {
+      "get": {
+        "tags": [
+          "02 活动查询"
+        ],
+        "summary": "已发布场次与启用票档",
+        "operationId": "listEventSessions",
+        "description": "公共响应场次及票档的标识字段都是id，与管理端sessionId/ticketTierId不同。启用票档可展示不代表仍有库存。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventSessionList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "security": []
+      }
+    },
+    "/api/events/ping": {
+      "get": {
+        "tags": [
+          "06 连通检查"
+        ],
+        "summary": "Event连通检查",
+        "operationId": "eventPing",
+        "description": "Event连通检查",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ping"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "security": []
+      }
+    },
+    "/api/admin/events": {
+      "post": {
+        "tags": [
+          "03 管理员活动"
+        ],
+        "summary": "创建完整草稿",
+        "operationId": "createEventDraft",
+        "description": "必须ADMIN角色；返回草稿不代表库存准备成功。每次最多20场、每场20票档；结束晚于开始，停售不晚于演出开始。同键同请求返回原草稿，不同参数409。示例时间需修改，或使用配套前置脚本动态生成开售区间。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventDraftVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EventDraftDTO"
+              },
+              "example": {
+                "idempotencyKey": "demo_event_001",
+                "name": "演唱会",
+                "category": "CONCERT",
+                "sessions": [
+                  {
+                    "name": "首场",
+                    "venueName": "体育馆",
+                    "venueAddress": "场馆地址",
+                    "startTime": "2027-06-01T19:00:00",
+                    "endTime": "2027-06-01T21:00:00",
+                    "saleStartTime": "2027-05-01T10:00:00",
+                    "saleEndTime": "2027-06-01T18:00:00",
+                    "purchaseLimit": 2,
+                    "ticketTiers": [
+                      {
+                        "name": "普通票",
+                        "price": 199,
+                        "totalQuantity": 10
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/events/{eventId}": {
+      "get": {
+        "tags": [
+          "03 管理员活动"
+        ],
+        "summary": "查看草稿与准备状态",
+        "operationId": "getEventDraft",
+        "description": "必须ADMIN。检查sessions[].ticketTiers[].preparationStatus与lastError。全部READY才允许发布。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventDraftVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/events/{eventId}/prepare": {
+      "post": {
+        "tags": [
+          "03 管理员活动"
+        ],
+        "summary": "按原参数重新准备库存",
+        "operationId": "prepareEventInventory",
+        "description": "必须ADMIN，无请求正文。重新排入准备并尝试推进一个票档；其他由后台执行，不修改原初始化参数。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventDraftVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/admin/events/{eventId}/publish": {
+      "post": {
+        "tags": [
+          "03 管理员活动"
+        ],
+        "summary": "发布准备完成的活动",
+        "operationId": "publishEvent",
+        "description": "必须ADMIN，无请求正文。全部售卖票档READY才发布，未准备完409；重复发布返回原活动。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultEventDraftVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "example": 1
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/orders/preview": {
+      "post": {
+        "tags": [
+          "04 订单与票券"
+        ],
+        "summary": "预览价格与购票规则",
+        "operationId": "previewOrder",
+        "description": "需要登录。校验开售区间及本次数量，查询Event计算金额；不创建订单、不预留库存、不占用累计额度。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderPreviewVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游响应无法解析或不符合契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderPreviewDTO"
+              },
+              "example": {
+                "ticketTierId": 1,
+                "quantity": 2
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders": {
+      "post": {
+        "tags": [
+          "04 订单与票券"
+        ],
+        "summary": "创建或返回原订单",
+        "operationId": "createOrder",
+        "description": "当前用户来自Token，不接受正文userId。200也可能返回CREATE_FAILED等明确业务状态，必须检查data.status。202为STOCK_PENDING或CLOSING；超时不能推断订单未创建，保持原幂等键和参数查询/重试。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderDetailVO"
+                }
+              }
+            }
+          },
+          "202": {
+            "description": "已可靠保存订单，仍处于STOCK_PENDING或CLOSING，请按原订单号查询",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderDetailVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游响应无法解析或不符合契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderCreateDTO"
+              },
+              "example": {
+                "ticketTierId": 1,
+                "quantity": 2,
+                "idempotencyKey": "demo_buy_001"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/{orderNo}": {
+      "get": {
+        "tags": [
+          "04 订单与票券"
+        ],
+        "summary": "查询本人订单",
+        "operationId": "getOwnedOrder",
+        "description": "其他用户的订单按不存在处理。COMPLETED表示已出票；STOCK_PENDING/CLOSING/PAYMENT_CONFIRMING等由后台继续恢复。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderDetailVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "string",
+              "description": "32位小写十六进制业务编号",
+              "pattern": "^[0-9a-f]{32}$",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/orders/{orderNo}/payments": {
+      "post": {
+        "tags": [
+          "04 订单与票券"
+        ],
+        "summary": "从原订单发起支付",
+        "operationId": "createOrderPayment",
+        "description": "无请求正文。不提供用户ID、金额或期限，服务端从原订单快照取值；重复调用返回原支付单。创建支付单不表示已付款。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderPaymentVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "上游响应无法解析或不符合契约",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "string",
+              "description": "32位小写十六进制业务编号",
+              "pattern": "^[0-9a-f]{32}$",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/orders/{orderNo}/tickets": {
+      "get": {
+        "tags": [
+          "04 订单与票券"
+        ],
+        "summary": "查询本人电子票",
+        "operationId": "getOwnedTickets",
+        "description": "返回orderStatus及tickets；未出票时列表为空。票号独立，当前不提供二维码入场核验。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultOrderTicketsVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "string",
+              "description": "32位小写十六进制业务编号",
+              "pattern": "^[0-9a-f]{32}$",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/orders/ping": {
+      "get": {
+        "tags": [
+          "06 连通检查"
+        ],
+        "summary": "Order连通检查",
+        "operationId": "orderPing",
+        "description": "经Gateway需要用户Token。直连Order该ping可匿名；只证明HTTP已执行。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ping"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payments/{paymentNo}": {
+      "get": {
+        "tags": [
+          "05 模拟支付"
+        ],
+        "summary": "查询本人支付单",
+        "operationId": "getOwnedPayment",
+        "description": "支付SUCCESS记录模拟付款事实；notifyStatus=DELIVERED不代表订单完成，需查询Order。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultPaymentVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "paymentNo",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "string",
+              "description": "32位小写十六进制业务编号",
+              "pattern": "^[0-9a-f]{32}$",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payments/{paymentNo}/simulate-success": {
+      "post": {
+        "tags": [
+          "05 模拟支付"
+        ],
+        "summary": "模拟付款成功",
+        "operationId": "simulatePaymentSuccess",
+        "description": "需要当前用户Token，且Payment开启PAYMENT_SIMULATION_ENABLED=true。无请求正文，不接收用户金额或付款时间。重复成功不重复出票。付款后异步通知及履约，请查询Order至COMPLETED。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultPaymentVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "paymentNo",
+            "in": "path",
+            "required": true,
+            "description": "使用前序接口返回的实际标识",
+            "schema": {
+              "type": "string",
+              "description": "32位小写十六进制业务编号",
+              "pattern": "^[0-9a-f]{32}$",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    },
+    "/api/payments/ping": {
+      "get": {
+        "tags": [
+          "06 连通检查"
+        ],
+        "summary": "Payment连通检查",
+        "operationId": "paymentPing",
+        "description": "经Gateway需要用户Token。直连Payment按本地安全配置准入，只检查HTTP入口。",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ping"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "X-Trace-Id",
+            "in": "header",
+            "required": false,
+            "description": "可选请求追踪标识；不提供时由服务生成",
+            "schema": {
+              "type": "string",
+              "example": "0123456789abcdef0123456789abcdef"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ResultUserVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/UserVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "UserVO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "username": {
+            "type": "string",
+            "description": "账号"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "昵称"
+          }
+        },
+        "required": [
+          "id",
+          "username",
+          "nickname"
+        ]
+      },
+      "ErrorResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "错误业务码；403也可能使用UNAUTHORIZED",
+            "enum": [
+              "BAD_REQUEST",
+              "UNAUTHORIZED",
+              "CONFLICT",
+              "SERVICE_BUSY",
+              "RESOURCE_NOT_FOUND",
+              "METHOD_NOT_ALLOWED",
+              "INTERNAL_ERROR",
+              "UPSTREAM_UNAVAILABLE",
+              "UPSTREAM_TIMEOUT",
+              "INVALID_UPSTREAM_RESPONSE"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "错误说明"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true,
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "通常null；参数校验时为字段错误映射"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "追踪标识"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "RegisterDTO": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "3至32位字母数字下划线；保存为小写",
+            "pattern": "^[A-Za-z0-9_]{3,32}$",
+            "example": "buyer01"
+          },
+          "password": {
+            "type": "string",
+            "description": "8至72字符，UTF-8还须不超过72字节",
+            "minLength": 8,
+            "maxLength": 72,
+            "format": "password",
+            "writeOnly": true,
+            "example": "DemoPassword_123"
+          },
+          "nickname": {
+            "type": "string",
+            "description": "昵称，不得为空白",
+            "minLength": 1,
+            "maxLength": 64,
+            "example": "购票用户"
+          }
+        },
+        "required": [
+          "username",
+          "password",
+          "nickname"
+        ]
+      },
+      "ResultTokenPairVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TokenPairVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "TokenPairVO": {
+        "type": "object",
+        "properties": {
+          "accessToken": {
+            "type": "string",
+            "description": "Bearer访问JWT，勿提交到Git"
+          },
+          "refreshToken": {
+            "type": "string",
+            "description": "轮换用JWT，勿提交到Git"
+          },
+          "tokenType": {
+            "type": "string",
+            "description": "认证类型",
+            "example": "Bearer"
+          },
+          "expiresIn": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Access有效秒数",
+            "example": 900
+          }
+        },
+        "required": [
+          "accessToken",
+          "refreshToken",
+          "tokenType",
+          "expiresIn"
+        ]
+      },
+      "LoginDTO": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "3至32位字母数字下划线；保存为小写",
+            "pattern": "^[A-Za-z0-9_]{3,32}$",
+            "example": "buyer01"
+          },
+          "password": {
+            "type": "string",
+            "description": "非空；最长72字符",
+            "minLength": 1,
+            "maxLength": 72,
+            "format": "password",
+            "writeOnly": true,
+            "example": "DemoPassword_123"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ]
+      },
+      "RefreshDTO": {
+        "type": "object",
+        "properties": {
+          "refreshToken": {
+            "type": "string",
+            "description": "有效刷新JWT；轮换成功后保存新的刷新凭证",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "required": [
+          "refreshToken"
+        ]
+      },
+      "ResultVoid": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "type": "object",
+            "nullable": true,
+            "description": "退出成功为null"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "ResultPing": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/Ping"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Ping": {
+        "type": "object",
+        "properties": {
+          "service": {
+            "type": "string",
+            "description": "服务名",
+            "example": "ticket-event-service"
+          },
+          "status": {
+            "type": "string",
+            "description": "仅说明HTTP入口已执行",
+            "enum": [
+              "ok"
+            ]
+          }
+        },
+        "required": [
+          "service",
+          "status"
+        ]
+      },
+      "ResultEventPageVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventPageVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "EventPageVO": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventListItemVO"
+            }
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "page": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "pageSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "example": 20
+          }
+        },
+        "required": [
+          "records",
+          "total",
+          "page",
+          "pageSize"
+        ]
+      },
+      "EventListItemVO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "活动名"
+          },
+          "category": {
+            "type": "string",
+            "description": "类别"
+          },
+          "coverUrl": {
+            "type": "string",
+            "description": "可选封面地址",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "coverUrl"
+        ]
+      },
+      "ResultEventDetailVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventDetailVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "EventDetailVO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "活动名"
+          },
+          "category": {
+            "type": "string",
+            "description": "类别"
+          },
+          "coverUrl": {
+            "type": "string",
+            "description": "可选封面地址",
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "可选介绍",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "category",
+          "coverUrl",
+          "description"
+        ]
+      },
+      "ResultEventSessionList": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventSessionVO"
+            }
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "EventSessionVO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "场次名"
+          },
+          "venueName": {
+            "type": "string",
+            "description": "场馆"
+          },
+          "venueAddress": {
+            "type": "string",
+            "description": "地址"
+          },
+          "startTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "endTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleStartTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleEndTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "purchaseLimit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "ticketTiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TicketTierVO"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "venueName",
+          "venueAddress",
+          "startTime",
+          "endTime",
+          "saleStartTime",
+          "saleEndTime",
+          "purchaseLimit",
+          "ticketTiers"
+        ]
+      },
+      "TicketTierVO": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "票档名称"
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 99999999.99,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "price"
+        ]
+      },
+      "ResultEventDraftVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/EventDraftVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "EventDraftVO": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "活动名"
+          },
+          "status": {
+            "type": "string",
+            "description": "草稿或已发布状态",
+            "example": "DRAFT"
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventDraftSessionVO"
+            }
+          }
+        },
+        "required": [
+          "eventId",
+          "name",
+          "status",
+          "sessions"
+        ]
+      },
+      "EventDraftSessionVO": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "场次名"
+          },
+          "status": {
+            "type": "string",
+            "description": "场次状态"
+          },
+          "startTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "endTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleStartTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleEndTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "purchaseLimit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "ticketTiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventDraftTierVO"
+            }
+          }
+        },
+        "required": [
+          "sessionId",
+          "name",
+          "status",
+          "startTime",
+          "endTime",
+          "saleStartTime",
+          "saleEndTime",
+          "purchaseLimit",
+          "ticketTiers"
+        ]
+      },
+      "EventDraftTierVO": {
+        "type": "object",
+        "properties": {
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "票档名"
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "plannedQuantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "preparationStatus": {
+            "type": "string",
+            "description": "准备进度",
+            "enum": [
+              "PENDING",
+              "READY",
+              "REVIEW_REQUIRED",
+              "LEGACY"
+            ]
+          },
+          "attempts": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 0,
+            "example": 2
+          },
+          "lastError": {
+            "type": "string",
+            "description": "最近有界错误，可为空",
+            "nullable": true
+          }
+        },
+        "required": [
+          "ticketTierId",
+          "name",
+          "price",
+          "plannedQuantity",
+          "preparationStatus",
+          "attempts",
+          "lastError"
+        ]
+      },
+      "EventDraftDTO": {
+        "type": "object",
+        "properties": {
+          "idempotencyKey": {
+            "type": "string",
+            "description": "相同业务重试保持同键和全部参数；新购买才使用新键",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "example": "demo_buy_001"
+          },
+          "name": {
+            "type": "string",
+            "description": "活动名",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "category": {
+            "type": "string",
+            "description": "类别",
+            "minLength": 1,
+            "maxLength": 30
+          },
+          "coverUrl": {
+            "type": "string",
+            "description": "可选封面",
+            "maxLength": 1024,
+            "nullable": true
+          },
+          "description": {
+            "type": "string",
+            "description": "可选介绍",
+            "maxLength": 10000,
+            "nullable": true
+          },
+          "sessions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventDraftSessionDTO"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "idempotencyKey",
+          "name",
+          "category",
+          "sessions"
+        ]
+      },
+      "EventDraftSessionDTO": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "场次名",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "venueName": {
+            "type": "string",
+            "description": "场馆",
+            "minLength": 1,
+            "maxLength": 200
+          },
+          "venueAddress": {
+            "type": "string",
+            "description": "地址",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "startTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "endTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleStartTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "saleEndTime": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "purchaseLimit": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "ticketTiers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventDraftTierDTO"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "name",
+          "venueName",
+          "venueAddress",
+          "startTime",
+          "endTime",
+          "saleStartTime",
+          "saleEndTime",
+          "purchaseLimit",
+          "ticketTiers"
+        ]
+      },
+      "EventDraftTierDTO": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "同场次票档名",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "price": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 99999999.99,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "totalQuantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          }
+        },
+        "required": [
+          "name",
+          "price",
+          "totalQuantity"
+        ]
+      },
+      "ResultOrderPreviewVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderPreviewVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "OrderPreviewVO": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierName": {
+            "type": "string",
+            "description": "票档名"
+          },
+          "unitPrice": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "totalAmount": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          }
+        },
+        "required": [
+          "eventId",
+          "sessionId",
+          "ticketTierId",
+          "ticketTierName",
+          "unitPrice",
+          "quantity",
+          "totalAmount"
+        ]
+      },
+      "OrderPreviewDTO": {
+        "type": "object",
+        "properties": {
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          }
+        },
+        "required": [
+          "ticketTierId",
+          "quantity"
+        ]
+      },
+      "ResultOrderDetailVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderDetailVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "OrderDetailVO": {
+        "type": "object",
+        "properties": {
+          "orderNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "status": {
+            "type": "string",
+            "description": "订单持久化处理进度",
+            "enum": [
+              "STOCK_PENDING",
+              "PENDING_PAYMENT",
+              "PAYMENT_CONFIRMING",
+              "PAID",
+              "COMPLETED",
+              "CLOSING",
+              "CLOSED",
+              "CREATE_FAILED",
+              "REVERSAL_PENDING",
+              "REVERSED",
+              "REVIEW_REQUIRED"
+            ],
+            "example": "PENDING_PAYMENT"
+          },
+          "eventId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierName": {
+            "type": "string",
+            "description": "名称快照"
+          },
+          "unitPrice": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "totalAmount": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "reservationId": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          }
+        },
+        "required": [
+          "orderNo",
+          "status",
+          "eventId",
+          "sessionId",
+          "ticketTierId",
+          "ticketTierName",
+          "unitPrice",
+          "quantity",
+          "totalAmount",
+          "expiresAt",
+          "reservationId",
+          "createdAt"
+        ]
+      },
+      "OrderCreateDTO": {
+        "type": "object",
+        "properties": {
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "相同业务重试保持同键和全部参数；新购买才使用新键",
+            "pattern": "^[A-Za-z0-9_-]{1,64}$",
+            "example": "demo_buy_001"
+          }
+        },
+        "required": [
+          "ticketTierId",
+          "quantity",
+          "idempotencyKey"
+        ]
+      },
+      "ResultOrderPaymentVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderPaymentVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "OrderPaymentVO": {
+        "type": "object",
+        "properties": {
+          "orderNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "paymentNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "paymentStatus": {
+            "type": "string",
+            "description": "支付事实状态",
+            "enum": [
+              "CREATED",
+              "SUCCESS"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "paidAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00",
+            "nullable": true
+          },
+          "reversalNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef",
+            "nullable": true
+          },
+          "reversalStatus": {
+            "type": "string",
+            "description": "冲正状态",
+            "enum": [
+              "PENDING",
+              "SUCCESS"
+            ],
+            "nullable": true
+          }
+        },
+        "required": [
+          "orderNo",
+          "paymentNo",
+          "amount",
+          "paymentStatus",
+          "expiresAt",
+          "paidAt",
+          "reversalNo",
+          "reversalStatus"
+        ]
+      },
+      "ResultOrderTicketsVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderTicketsVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "OrderTicketsVO": {
+        "type": "object",
+        "properties": {
+          "orderNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "orderStatus": {
+            "type": "string",
+            "description": "订单持久化处理进度",
+            "enum": [
+              "STOCK_PENDING",
+              "PENDING_PAYMENT",
+              "PAYMENT_CONFIRMING",
+              "PAID",
+              "COMPLETED",
+              "CLOSING",
+              "CLOSED",
+              "CREATE_FAILED",
+              "REVERSAL_PENDING",
+              "REVERSED",
+              "REVIEW_REQUIRED"
+            ],
+            "example": "PENDING_PAYMENT"
+          },
+          "tickets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ElectronicTicketVO"
+            }
+          }
+        },
+        "required": [
+          "orderNo",
+          "orderStatus",
+          "tickets"
+        ]
+      },
+      "ElectronicTicketVO": {
+        "type": "object",
+        "properties": {
+          "ticketNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "ticketIndex": {
+            "type": "integer",
+            "format": "int32",
+            "minimum": 1,
+            "example": 2
+          },
+          "status": {
+            "type": "string",
+            "description": "当前仅VALID",
+            "enum": [
+              "VALID"
+            ]
+          },
+          "eventId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "ticketTierName": {
+            "type": "string",
+            "description": "票档名"
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          }
+        },
+        "required": [
+          "ticketNo",
+          "ticketIndex",
+          "status",
+          "eventId",
+          "sessionId",
+          "ticketTierId",
+          "ticketTierName",
+          "createdAt"
+        ]
+      },
+      "ResultPaymentVO": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "description": "成功说明",
+            "example": "success"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PaymentVO"
+          },
+          "traceId": {
+            "type": "string",
+            "description": "本次追踪标识",
+            "example": "0123456789abcdef0123456789abcdef"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "PaymentVO": {
+        "type": "object",
+        "properties": {
+          "paymentNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "orderNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef"
+          },
+          "userId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "example": 1
+          },
+          "amount": {
+            "type": "number",
+            "minimum": 0.01,
+            "maximum": 10000000000000000,
+            "multipleOf": 0.01,
+            "description": "人民币金额，最多两位小数；服务端使用BigDecimal",
+            "example": 199
+          },
+          "status": {
+            "type": "string",
+            "description": "模拟付款事实",
+            "enum": [
+              "CREATED",
+              "SUCCESS"
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          },
+          "paidAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00",
+            "nullable": true
+          },
+          "notifyStatus": {
+            "type": "string",
+            "description": "DELIVERED仅代表Order可靠接收依据，不代表完成出票",
+            "enum": [
+              "NONE",
+              "PENDING",
+              "DELIVERED"
+            ]
+          },
+          "reversalNo": {
+            "type": "string",
+            "description": "32位小写十六进制业务编号",
+            "pattern": "^[0-9a-f]{32}$",
+            "example": "0123456789abcdef0123456789abcdef",
+            "nullable": true
+          },
+          "reversalStatus": {
+            "type": "string",
+            "description": "冲正状态",
+            "enum": [
+              "PENDING",
+              "SUCCESS"
+            ],
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
+            "example": "2027-06-01T10:00:00"
+          }
+        },
+        "required": [
+          "paymentNo",
+          "orderNo",
+          "userId",
+          "amount",
+          "status",
+          "expiresAt",
+          "paidAt",
+          "notifyStatus",
+          "reversalNo",
+          "reversalStatus",
+          "createdAt"
+        ]
+      }
+    },
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "填写Access Token本体；Apifox自动添加Bearer前缀。管理员接口使用ADMIN Token。"
+      }
+    }
+  }
+}
