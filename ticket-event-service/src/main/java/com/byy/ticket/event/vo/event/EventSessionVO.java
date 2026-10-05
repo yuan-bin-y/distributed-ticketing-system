@@ -14,7 +14,7 @@ import java.util.List;
  * @param endTime 场次结束时间。
  * @param saleStartTime 允许购买的开始时间。
  * @param saleEndTime 停止购买的时间，订单预览按不包含此时刻的边界判断。
- * @param purchaseLimit 单次购票数量上限；当前未按用户统计历史购买次数。
+ * @param purchaseLimit 每位用户在该场次的累计购票上限，由Order在正式下单时执行。
  * @param ticketTiers 该场次可展示的启用票档列表。
  */
 public record EventSessionVO(Long id, String name, String venueName, String venueAddress,

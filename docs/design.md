@@ -2,7 +2,7 @@
 
 本文件先固定学习项目的业务范围与关键规则。实现过程中如需改变服务边界或交易语义，先更新本文件，再修改代码。
 
-当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。订单服务已本地事务出票并进入 COMPLETED，见 [电子票生成与查询](ticket-issuance.md)。真实认证、用户累计限购、验票、Outbox/MQ 尚未实现。
+当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。订单服务已本地事务出票并进入 COMPLETED，见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入网关、订单和支付；用户累计限购已实现，见 [累计限购](purchase-quota.md)；其余内部服务认证、验票、Outbox/MQ 尚未实现。
 
 当前实施顺序按学习讨论调整：先以 HTTP、幂等和持久化恢复完成第一版业务闭环，再引入 MQ 与 Outbox。Payment 的通知字段记录待发送事实，后台已发送 HTTP 通知并恢复失败；Order保存依据并恢复库存确认与无法履约冲正。后文中的 MQ/Outbox 描述为后续演进目标。
 
@@ -36,7 +36,7 @@
 
 第一版服务较多，按阶段启动：先 Gateway、Nacos、Event；再 Inventory、Order；最后 Auth、Payment。开发早期可用固定测试用户贯通订单链路，再接真实认证。
 
-Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单已完成Token身份接入及支付通知服务凭证保护；支付公共用户接口及其余内部服务身份仍待接入，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
+Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单已完成Token身份接入及支付通知服务凭证保护；支付公共用户接口及Order调用Payment的服务凭证也已接入，其余内部服务身份仍待接入，见 [支付身份接入](payment-auth.md)，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
 
 ## 3. 核心数据与状态
 
@@ -100,7 +100,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 
 订单服务新增 `InventoryClient`，通过 RestClient、Nacos 和 LoadBalancer 按服务名调用库存服务的预留、确认、释放和预留查询接口。订单服务定义自己的请求/响应契约，不依赖库存模块和数据库。Event、Inventory 使用各自有明确名称的 HTTP Builder，独立配置连接/读取超时，均不自动重试。
 
-新增 `POST /internal/orders/stock-reservations` → `OrderService.reserveStock` → `InventoryClient.reserve`，让库存调用真实经过订单业务层。该接口是服务内部库存协作入口，接收稳定的 `orderId`、`sessionId`、`ticketTierId`、`quantity`、`expiresAt`，返回预留结果；此内部演示接口不创建订单、不检查活动规则或用户身份。正式下单已在后续阶段使用独立的 `POST /api/orders`，累计限购仍待实现，已有 `/api/orders/preview` 继续只做预览。网关不新增内部路由。
+新增 `POST /internal/orders/stock-reservations` → `OrderService.reserveStock` → `InventoryClient.reserve`，让库存调用真实经过订单业务层。该接口是服务内部库存协作入口，接收稳定的 `orderId`、`sessionId`、`ticketTierId`、`quantity`、`expiresAt`，返回预留结果；此内部演示接口不创建订单、不检查活动规则或用户身份。正式下单已在后续阶段使用独立的 `POST /api/orders`，累计限购已由正式下单事务实现，已有 `/api/orders/preview` 继续只做预览。网关不新增内部路由。
 
 客户端校验成功响应的预留 ID、订单编号、场次、票档、数量、到期时间和状态。预留重试允许返回原记录的 RESERVED、SOLD 或 RELEASED；确认只接受 SOLD，释放只接受 RELEASED。库存符合契约的 400/404/409 作为参数、资源及业务冲突处理；不可用、超时、错误契约分别返回 503/504/502。重定向不作为成功。超时或连接失败可能发生在库存提交之后，不自动释放，也不把调用失败当作库存未变更；调用方需沿用同一编号及全部参数重试，或通过已知预留 ID 核对状态。
 

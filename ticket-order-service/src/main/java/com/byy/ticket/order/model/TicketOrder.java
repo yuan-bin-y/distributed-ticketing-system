@@ -24,6 +24,8 @@ public class TicketOrder {
     private BigDecimal totalAmount;
     /** 订单状态机的当前状态。 */
     private String status;
+    /** 本订单购买额度：HELD占用，RELEASED已归还；与终态变更在本地事务中提交。 */
+    private String quotaStatus;
     /** 库存返回的预留编号。 */
     private String reservationId;
     /** 从支付服务核实并持久化的唯一付款编号。 */

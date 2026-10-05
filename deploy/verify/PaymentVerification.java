@@ -312,8 +312,8 @@ public class PaymentVerification {
                 "{\"paymentNo\":\""+number+"\",\"reason\":\"closed\"}").statusCode()==200, "HTTP full reversal");
         check(http("POST","/internal/payment-reversals","{\"paymentNo\":\""+number+"\",\"reason\":\" \"}")
                 .statusCode()==400, "HTTP empty reversal reason");
-        check(http("DELETE","/api/payments/"+number,null).statusCode()==405, "HTTP wrong method");
-        check(http("GET","/missing",null).statusCode()==404, "HTTP unknown path");
+        check(http("DELETE","/api/payments/"+number,null,"X-Dev-User-Id","1").statusCode()==405, "HTTP wrong method");
+        check(http("GET","/missing",null,"X-Dev-User-Id","1").statusCode()==404, "HTTP unknown path");
         check(http("GET","/api/payments/ping",null).body().contains("ticket-payment-service"), "payment ping");
         System.out.println("PASS HTTP contracts, identity gates, ownership and tracing");
     }
@@ -321,6 +321,14 @@ public class PaymentVerification {
     HttpResponse<String> http(String method,String path,String body,String... headers) throws Exception {
         var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(15));
         if(body!=null)builder.header("Content-Type","application/json");
+        if(path.startsWith("/internal/payments")||path.equals("/internal/payment-reversals")){
+            String secret=System.getenv("ORDER_PAYMENT_SERVICE_TOKEN");
+            if(secret==null||secret.isBlank()){
+                String file=System.getenv("ORDER_PAYMENT_CREDENTIAL_PATH");
+                secret=java.nio.file.Files.readString(java.nio.file.Path.of(file==null||file.isBlank()?".local/service-credentials/order-payment.token":file)).strip();
+            }
+            builder.header("X-Order-Payment-Credential",secret);
+        }
         for(int i=0;i<headers.length;i+=2)builder.header(headers[i],headers[i+1]);
         builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(body));
         return HTTP.send(builder.build(),HttpResponse.BodyHandlers.ofString());

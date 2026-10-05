@@ -9,6 +9,7 @@ import com.byy.ticket.order.client.dto.PaymentReversalResponse;
 import com.byy.ticket.order.client.exception.PaymentServiceCallException;
 import com.byy.ticket.order.client.exception.PaymentServiceCallException.Reason;
 import com.byy.ticket.order.config.PaymentClientProperties;
+import com.byy.ticket.security.service.OrderPaymentCredential;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.core.ParameterizedTypeReference;
@@ -118,8 +119,10 @@ public class PaymentClient {
 
     /** 注入支付专用Builder，服务名由LoadBalancer解析成实例地址。 */
     public PaymentClient(@LoadBalanced @Qualifier("paymentRestClientBuilder") RestClient.Builder builder,
-                         PaymentClientProperties properties) {
-        restClient = builder.clone().baseUrl("http://" + properties.serviceId()).build();
+                         PaymentClientProperties properties, OrderPaymentCredential credential) {
+        // 三个内部调用都携带Order专用服务凭证，不转发用户Token充当服务身份。
+        restClient = builder.clone().baseUrl("http://" + properties.serviceId())
+                .defaultHeader(OrderPaymentCredential.HEADER, credential.value()).build();
     }
 
     /** 创建或取回同一订单的支付单；核对用户、金额和期限，未知结果只能用原参数核对或重试。 */

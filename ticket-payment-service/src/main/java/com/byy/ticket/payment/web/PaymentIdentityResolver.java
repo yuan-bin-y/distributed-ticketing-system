@@ -5,7 +5,7 @@ import com.byy.ticket.payment.exception.PaymentIdentityException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
-/** 公共支付入口的身份解析；Auth 未接入时只有显式开发配置才接受开发身份头。 */
+/** 公共支付身份读取点：Security验签后建立Principal，业务只读取登录用户ID。 */
 @Component
 public class PaymentIdentityResolver {
     private final PaymentProperties properties;

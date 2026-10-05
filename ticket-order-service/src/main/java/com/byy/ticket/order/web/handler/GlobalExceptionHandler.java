@@ -38,7 +38,7 @@ public class GlobalExceptionHandler {
         return Result.failure(ApiErrorCode.UNAUTHORIZED, exception.getMessage());
     }
 
-    /** 同一购买幂等键提交不同内容时返回 409。 */
+    /** 购买幂等参数、累计限购或订单状态冲突返回409。 */
     @ExceptionHandler(OrderConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)
     public Result<Void> handleOrderConflict(OrderConflictException exception) {

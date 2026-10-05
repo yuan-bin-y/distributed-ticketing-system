@@ -13,9 +13,10 @@ import java.util.concurrent.*;
 public class OrderAuthVerification extends AuthVerification {
     final List<Process> children=new ArrayList<>();
     final List<String> schemas=new ArrayList<>();
+    final ExecutorService eventWorkers=Executors.newCachedThreadPool();
     HttpServer event;
-    Path directory, credentialFile;
-    String credential;
+    Path directory, credentialFile, orderCredentialFile;
+    String credential, orderCredential;
     int orderPort,inventoryPort,paymentPort;
     String orderSchema,inventorySchema,paymentSchema;
     OrderAuthVerification(Path root){super(root);}
@@ -34,6 +35,8 @@ public class OrderAuthVerification extends AuthVerification {
         Files.writeString(directory.resolve("public.pem"),pem("PUBLIC KEY",keys.getPublic().getEncoded()));
         byte[] bytes=new byte[32];new SecureRandom().nextBytes(bytes);credential=HexFormat.of().formatHex(bytes);
         credentialFile=directory.resolve("payment-order.token");Files.writeString(credentialFile,credential);
+        new SecureRandom().nextBytes(bytes);orderCredential=HexFormat.of().formatHex(bytes);
+        orderCredentialFile=directory.resolve("order-payment.token");Files.writeString(orderCredentialFile,orderCredential);
         first=start(directory);int authPort=port(first);
         status(call(authPort,"POST","/api/auth/register",Map.of("username","buyer","password","Testing_123","nickname","用户1"),null),200);
         status(call(authPort,"POST","/api/auth/register",Map.of("username","other","password","Testing_123","nickname","用户2"),null),200);
@@ -42,7 +45,7 @@ public class OrderAuthVerification extends AuthVerification {
         String otherAccess=JSON.readTree(other.body()).path("data").path("accessToken").asText();
         orderSchema="ticket_order_auth_verify_"+suffix;inventorySchema="ticket_stock_auth_verify_"+suffix;paymentSchema="ticket_payment_auth_verify_"+suffix;
         try(var sql=admin.createStatement()){for(String name:List.of(orderSchema,inventorySchema,paymentSchema)){sql.execute("CREATE DATABASE "+name);schemas.add(name);}}
-        event=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);event.setExecutor(pool);
+        event=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);event.setExecutor(eventWorkers);
         event.createContext("/",exchange->{
             var now=LocalDateTime.now(ZoneOffset.ofHours(8));
             byte[] body=JSON.writeValueAsBytes(Map.of("code","OK","message","success","data",Map.of(
@@ -54,7 +57,8 @@ public class OrderAuthVerification extends AuthVerification {
         inventoryPort=freePort();launch("ticket-inventory-service",inventoryPort,inventorySchema,List.of());
         try(var sql=admin.createStatement()){sql.executeUpdate("INSERT INTO "+inventorySchema+".t_ticket_stock(ticket_tier_id,session_id,total_quantity,available_quantity) VALUES(3,2,20,20)");}
         orderPort=freePort();paymentPort=freePort();
-        launch("ticket-payment-service",paymentPort,paymentSchema,List.of("--ticket.payment.simulation-enabled=true","--ticket.payment.dev-identity-enabled=true",
+        launch("ticket-payment-service",paymentPort,paymentSchema,List.of("--ticket.payment.simulation-enabled=true","--ticket.payment.dev-identity-enabled=false",
+                "--ticket.security.jwk-set-uri=http://127.0.0.1:"+authPort+"/.well-known/jwks.json","--ticket.security.redis-prefix="+prefix,
                 "--ticket.payment.notification.fixed-delay=100","--ticket.payment.notification.retry-base=100ms",
                 "--spring.cloud.discovery.client.simple.instances.ticket-order-service[0].uri=http://127.0.0.1:"+orderPort));
         launch("ticket-order-service",orderPort,orderSchema,orderArguments(authPort,true));
@@ -84,7 +88,7 @@ public class OrderAuthVerification extends AuthVerification {
         status(headers(orderPort,"POST","/internal/orders/stock-reservations",Map.of(),Map.of("X-Payment-Order-Credential",credential)),403);
         var payment=call(orderPort,"POST","/api/orders/"+no+"/payments",Map.of(),access);status(payment,200);
         String paymentNo=JSON.readTree(payment.body()).path("data").path("paymentNo").asText();check(paymentNo.matches("[0-9a-f]{32}"),"real payment created");
-        status(headers(paymentPort,"POST","/api/payments/"+paymentNo+"/simulate-success",Map.of(),Map.of("X-Dev-User-Id","1")),200);
+        status(call(paymentPort,"POST","/api/payments/"+paymentNo+"/simulate-success",Map.of(),access),200);
         long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(20);boolean completed=false;
         while(System.nanoTime()<deadline){
             var response=call(orderPort,"GET","/api/orders/"+no,null,access);
@@ -116,7 +120,9 @@ public class OrderAuthVerification extends AuthVerification {
         var arguments=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin/java.exe").toString(),"-jar",root.resolve(module+"/target/"+module+"-1.0-SNAPSHOT.jar").toString(),
                 "--server.port="+port,"--spring.cloud.nacos.discovery.enabled=false",
                 "--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/"+database+"?connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true",
-                "--ticket.service-auth.payment-order-token=","--ticket.service-auth.credential-path="+credentialFile,"--logging.level.root=ERROR"));arguments.addAll(extra);
+                "--ticket.service-auth.payment-order-token=","--ticket.service-auth.credential-path="+credentialFile,
+                "--ticket.payment-service-auth.order-payment-token=","--ticket.payment-service-auth.credential-path="+orderCredentialFile,
+                "--logging.level.root=ERROR"));arguments.addAll(extra);
         var process=new ProcessBuilder(arguments).directory(root.toFile()).redirectOutput(directory.resolve(module+"-"+port+".out.log").toFile())
                 .redirectError(directory.resolve(module+"-"+port+".err.log").toFile()).start();children.add(process);
         String ping=module.contains("inventory")?"/internal/stocks/3":module.contains("payment")?"/api/payments/ping":"/api/orders/ping";
@@ -134,6 +140,7 @@ public class OrderAuthVerification extends AuthVerification {
     void cleanup()throws Exception{
         for(var process:children){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS))process.destroyForcibly();}
         if(event!=null)event.stop(0);
+        eventWorkers.shutdownNow();
         try{if(admin!=null)try(var sql=admin.createStatement()){for(String database:schemas)if(database.matches("ticket_(order|stock|payment)_auth_verify_[0-9a-f]{32}"))sql.execute("DROP DATABASE "+database);}}
         finally{super.cleanup();}
     }

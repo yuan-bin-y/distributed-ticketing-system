@@ -34,11 +34,12 @@ public class OrderStockWorkflow {
     private final Clock clock;
     private final OrderPaymentFulfillment fulfillment;
     private final OrderTicketIssueTransaction ticketIssue;
+    private final OrderTransactionService transactions;
 
     /** 注入订单持久化、库存客户端、付款履约步骤、出票事务、配置和业务时钟。 */
     public OrderStockWorkflow(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
                               OrderWorkflowProperties properties, Clock clock, OrderPaymentFulfillment fulfillment,
-                              OrderTicketIssueTransaction ticketIssue) {
+                              OrderTicketIssueTransaction ticketIssue, OrderTransactionService transactions) {
         this.orders = orders;
         this.items = items;
         this.inventory = inventory;
@@ -46,6 +47,7 @@ public class OrderStockWorkflow {
         this.clock = clock;
         this.fulfillment = fulfillment;
         this.ticketIssue = ticketIssue;
+        this.transactions = transactions;
     }
 
     /** 按截止时间限量扫描，单条失败不会阻断后续订单；多实例再通过 claim 竞争领取。 */
@@ -169,7 +171,9 @@ public class OrderStockWorkflow {
 
     /** 按当前状态和领取令牌完成步骤；终态不再进入后台扫描。 */
     private void complete(TicketOrder order, String token, OrderStatus target, String reservationId, String error) {
-        int changed = orders.finish(order.getId(), token, order.getStatus(), target.name(), reservationId, now(), error);
+        int changed = (target == OrderStatus.CLOSED || target == OrderStatus.CREATE_FAILED)
+                ? transactions.finishAndReleaseQuota(order.getId(), token, order.getStatus(), target, reservationId, now(), error)
+                : orders.finish(order.getId(), token, order.getStatus(), target.name(), reservationId, now(), error);
         if (changed == 1 && target == OrderStatus.REVIEW_REQUIRED) {
             log.error("订单需要核对，orderNo={}, reservationId={}, cause={}", order.getOrderNo(), reservationId, error);
         }

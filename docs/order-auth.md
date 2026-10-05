@@ -6,7 +6,7 @@ Order使用Spring Security的Servlet `SecurityFilterChain`，独立校验用户J
 
 支付通知入口 `POST /internal/orders/payment-results` 使用单独的Payment服务凭证；用户JWT不能访问这个入口，服务凭证不能调用用户订单接口。Payment的OrderClient增加专用凭证头，其可靠通知、查询权威支付事实、存储证据及幂等恢复保持原有流程。
 
-Payment公共用户接口的Token认证仍未接入；本阶段并未完成所有服务内部入口的统一认证。
+Payment公共用户接口的Token认证及Order调用Payment的服务凭证现已接入，见 [支付身份接入](payment-auth.md)。Event/Inventory内部入口仍未接入服务认证。
 
 ## 启动与配置
 

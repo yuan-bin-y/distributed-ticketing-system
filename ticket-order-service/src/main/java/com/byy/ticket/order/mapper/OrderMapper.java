@@ -12,6 +12,9 @@ import java.util.List;
 /** 订单查询与状态更新；任务领取和完成都用条件 SQL，协调多个订单实例。 */
 @Mapper
 public interface OrderMapper extends BaseMapper<TicketOrder> {
+    /** 订单行已锁定后标记已归还，与额度减法及订单终态在同一个事务中完成。 */
+    @Update("UPDATE t_order SET quota_status='RELEASED' WHERE id=#{id} AND quota_status='HELD'")
+    int markQuotaReleased(@Param("id") Long id);
     /** 出票本地事务先锁定订单行，与重复任务、付款通知按同一行串行核对。 */
     @Select("SELECT * FROM t_order WHERE id=#{id} FOR UPDATE")
     TicketOrder selectByIdForUpdate(@Param("id") Long id);

@@ -51,19 +51,33 @@ public class PaymentFulfillmentVerification extends OrderPaymentVerification {
         proxy.setExecutor(workers);proxy.createContext("/",e->forward(e,false));proxy.start();proxyPort=proxy.getAddress().getPort();
         orderPort=freePort();paymentPort=freePort();
         paymentProcess=launchPayment(false);waitPing(paymentProcess,paymentPort,"/api/payments/ping");
-        // 先启动到 V2，再以新版本升级，覆盖上一阶段已有数据的迁移。
-        orderProcess=launchOrder(List.of("--spring.flyway.target=2","--ticket.order.recovery-enabled=false"));
+        // 先建V4旧schema并用SQL/支付内部接口准备历史事实，再迁移V5启动新订单业务。
+        orderProcess=launchOrder(List.of("--spring.flyway.target=4","--ticket.order.recovery-enabled=false"));
         waitPing(orderProcess,orderPort,"/api/orders/ping");
-        String legacy=fixture("PENDING_PAYMENT",1L,true,now().plusMinutes(10));String legacyPayment=create(legacy);pay(legacyPayment);
-        try(var sql=orderDb.prepareStatement("UPDATE t_order SET status='REVIEW_REQUIRED',payment_no=?,paid_at=? WHERE order_no=?")){
+        var legacyExpiry=now().plusMinutes(10);
+        String legacy=fixture("PENDING_PAYMENT",1L,true,legacyExpiry);
+        var legacyResponse=request("POST",paymentPort,"/internal/payments",null,
+                "{\"orderNo\":\""+legacy+"\",\"userId\":1,\"amount\":398,\"expiresAt\":\""+legacyExpiry+"\"}");
+        check(legacyResponse.statusCode()==200,"legacy payment created without new-schema Order queries");
+        String legacyPayment=data(legacyResponse).path("paymentNo").asString();pay(legacyPayment);
+        try(var sql=orderDb.prepareStatement("UPDATE t_order SET status='PAYMENT_CONFIRMING',payment_no=?,paid_at=?,next_attempt_at=CURRENT_TIMESTAMP(3) WHERE order_no=?")){
             sql.setString(1,legacyPayment);sql.setTimestamp(2,Timestamp.valueOf(LocalDateTime.parse(value(paymentDb,"paid_at",legacy).replace(' ','T'))));
             sql.setString(3,legacy);sql.executeUpdate();
         }
         stop(orderProcess);orderPort=freePort();orderProcess=launchOrder(List.of());waitPing(orderProcess,orderPort,"/api/orders/ping");
-        awaitState(legacy,"PAID");check(stockStatus(legacy).equals("SOLD"),"legacy payment-review order recovers after V3 migration");
+        awaitState(legacy,"PAID");check(stockStatus(legacy).equals("SOLD"),"legacy payment-confirming order recovers after V5 migration");
         normal();lostConfirm();lostReversal();failures();databaseRecovery();latePayment();competition(true);competition(false);restart();
         check(stockValue("total_quantity")==stockValue("available_quantity")+stockValue("reserved_quantity")+stockValue("sold_quantity"),"stock balance maintained");
         check(stockValue("reserved_quantity")==0,"all test reservations reach terminal state");
+        try(var sql=orderDb.createStatement();var result=sql.executeQuery("SELECT occupied_quantity FROM t_user_session_quota WHERE user_id=1 AND session_id=1")){
+            result.next();long quantity=result.getLong(1);
+            try(var count=orderDb.createStatement();var expected=count.executeQuery("SELECT COALESCE(SUM(i.quantity),0) FROM t_order o JOIN t_order_item i ON i.order_id=o.id WHERE o.user_id=1 AND i.session_id=1 AND o.quota_status='HELD'")){
+                expected.next();check(quantity==expected.getLong(1),"quota balance matches all held orders after races and reversal");
+            }
+        }
+        try(var sql=orderDb.createStatement();var result=sql.executeQuery("SELECT COUNT(*) FROM t_order WHERE status IN ('CLOSED','CREATE_FAILED','REVERSED') AND quota_status<>'RELEASED'")){
+            result.next();check(result.getInt(1)==0,"all failed, closed and reversed orders returned quota");
+        }
     }
     Process launchPayment(boolean notifications)throws Exception{
         return start("ticket-payment-service",paymentPort,paymentSchema,List.of("--ticket.payment.simulation-enabled=true",

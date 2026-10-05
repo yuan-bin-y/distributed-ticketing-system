@@ -29,6 +29,9 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  payment-service-auth:
+    order-payment-token: ${ORDER_PAYMENT_SERVICE_TOKEN:}
+    credential-path: ${ORDER_PAYMENT_CREDENTIAL_PATH:.local/service-credentials/order-payment.token}
   security:
     issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
     audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}

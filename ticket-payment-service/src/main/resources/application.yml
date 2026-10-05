@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: ticket-payment-service
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
   datasource:
     url: "${PAYMENT_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_payment?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
     username: ${LOCAL_MYSQL_USERNAME}
@@ -22,13 +29,22 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  security:
+    issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
+    audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}
+    jwk-set-uri: ${AUTH_JWK_SET_URI:http://127.0.0.1:8065/.well-known/jwks.json}
+    jwk-timeout: 3s
+    redis-prefix: "ticket:auth:"
+  payment-service-auth:
+    order-payment-token: ${ORDER_PAYMENT_SERVICE_TOKEN:}
+    credential-path: ${ORDER_PAYMENT_CREDENTIAL_PATH:.local/service-credentials/order-payment.token}
   service-auth:
     payment-order-token: ${PAYMENT_ORDER_SERVICE_TOKEN:}
     credential-path: ${PAYMENT_ORDER_CREDENTIAL_PATH:.local/service-credentials/payment-order.token}
   payment:
     # 仅在本地显式开启；模拟成功不代表接入真实支付渠道。
     simulation-enabled: ${PAYMENT_SIMULATION_ENABLED:false}
-    # Auth 接入前，显式开启才接受 X-Dev-User-Id。
+    # 默认使用JWT；显式开启且本机直连、无Authorization时才接受开发用户头。
     dev-identity-enabled: ${PAYMENT_DEV_IDENTITY_ENABLED:false}
     notification:
       enabled: ${PAYMENT_NOTIFICATION_ENABLED:true}

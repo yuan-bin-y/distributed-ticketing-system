@@ -2,19 +2,23 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、`ticket-security`、网关、活动服务、订单服务、库存服务、支付服务和Auth服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth已完成注册登录与会话管理，业务服务身份接入、累计限购、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)、[Auth服务](docs/auth-service.md)。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、`ticket-security`、网关、活动服务、订单服务、库存服务、支付服务和Auth服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth已完成注册登录与会话管理，网关、订单、支付已接入真实用户身份，Order与Payment双向内部调用使用独立服务凭证；累计限购已接入；其余内部入口认证、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)、[Auth服务](docs/auth-service.md)。
 
 ## Auth 服务当前阶段
 
-新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth、网关及订单Token接入已实现，支付公共用户接口的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
+新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth、网关、订单及支付Token接入已实现，代码阅读见 [支付身份接入](docs/payment-auth.md)。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
 
 ## 网关身份准入
 
-网关已增加Auth路由、JWT公钥验签、声明校验和响应式Redis会话检查，使用新增 `ticket-security` 公共库。活动GET、注册登录刷新可匿名；其他请求必须携带有效Access Token。退出后失效，Redis故障拒绝放行。外部X-Dev-User-Id/X-User-Id不再向下游转发。订单已独立接入Token并可取得真实用户ID；支付公共用户接口Token接入及其他内部服务身份仍待后续步骤。44项隔离验证通过，阅读顺序、配置和边界见 [网关认证](docs/gateway-auth.md)。
+网关已增加Auth路由、JWT公钥验签、声明校验和响应式Redis会话检查，使用新增 `ticket-security` 公共库。活动GET、注册登录刷新可匿名；其他请求必须携带有效Access Token。退出后失效，Redis故障拒绝放行。外部X-Dev-User-Id/X-User-Id不再向下游转发。订单和支付已独立接入Token并取得当前请求的真实用户ID；其余内部服务身份仍待后续步骤。44项隔离验证通过，阅读顺序、配置和边界见 [网关认证](docs/gateway-auth.md)。
+
+## 同场次累计限购
+
+Order已按用户与场次原子占用额度；同场次各票档合并计算。明确失败、关闭或冲正后在本地事务中归还，成交和不确定结果保留额度。95项隔离检查通过。升级时先停止全部旧Order实例，新版启动执行V5回填历史订单；见 [累计限购](docs/purchase-quota.md)。
 
 ## 订单下单与恢复
 
-订单已接入真实JWT身份，Payment通知Order也已使用独立服务凭证。代码阅读与启动步骤见 [订单身份接入](docs/order-auth.md)。本机通知凭证已生成，Order和Payment需同时重启；正常用户请求关闭开发身份开关，携带Access Token。37项认证闭环检查与135项成交/冲正回归通过；Payment公共用户接口Token接入是下一步。
+订单已接入真实JWT身份，Payment通知Order也已使用独立服务凭证。代码阅读与启动步骤见 [订单身份接入](docs/order-auth.md)。本机通知凭证已生成，Order和Payment需同时重启；正常用户请求关闭开发身份开关，携带Access Token。支付身份接入后79项认证闭环检查与135项成交/冲正回归通过，含真实网关下单、模拟付款和出票，见 [支付身份接入](docs/payment-auth.md)。
 
 正式入口为 `POST /api/orders` 和 `GET /api/orders/{orderNo}`。创建请求为 `ticketTierId`、`quantity`、`idempotencyKey`。订单服务先校验活动规则，在本地事务中保存主表和购买快照，再在事务外调用库存；不确定结果保留 `STOCK_PENDING`，后台沿用原参数核对。预留成功进入待支付；未支付到期订单先进入 `CLOSING`，确认释放后 `CLOSED`。库存已售出等异常终态进入 `REVIEW_REQUIRED`，不自动释放。
 
@@ -28,7 +32,7 @@
 
 `ticket-payment-service` 默认端口 `8064`，沿用 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`，首次启动自动创建 `ticket_payment`；Flyway 建立 `t_payment`、`t_payment_reversal` 及迁移历史表。运行类为 `com.byy.ticket.payment.TicketPaymentApplication`。
 
-默认模拟成功和冲正关闭。仅本地演示在 Payment 运行配置中设置 `PAYMENT_SIMULATION_ENABLED=true;PAYMENT_DEV_IDENTITY_ENABLED=true`，公共接口带 `X-Dev-User-Id: 1`。创建单、查询和冲正由内部接口提供；网关只路由 `/api/payments/**`，不转发内部路径。支付成功和待通知状态原子保存，后台可靠通知订单并恢复失败任务；订单保存依据后进入 PAYMENT_CONFIRMING，核对原库存后成交或冲正，矛盾事实进入 REVIEW_REQUIRED。DELIVERED 只表示依据已接收，成交及冲正进度分别由 PAID、REVERSED 表示。完整接口和阅读顺序见 [支付服务](docs/payment-service.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)。
+默认模拟成功和冲正关闭。本地模拟付款演示设置 `PAYMENT_SIMULATION_ENABLED=true`，公共接口携带Bearer Access Token，开发身份默认关闭。内部创建、查询和冲正验证Order服务凭证；网关只路由 `/api/payments/**`，不转发内部路径。支付成功和待通知状态原子保存，后台可靠通知订单并恢复失败任务；订单保存依据后进入 PAYMENT_CONFIRMING，核对原库存后成交或冲正，矛盾事实进入 REVIEW_REQUIRED。DELIVERED 只表示依据已接收，成交及冲正进度分别由 PAID、REVERSED 表示。完整接口和阅读顺序见 [支付服务](docs/payment-service.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)。
 
 支付模块通过90项真实MySQL、并发、事务回滚、HTTP、重启与Nacos注册检查。验证脚本为 `deploy/verify/verify_payment.ps1 -VerifyNacos`，只使用并清理随机测试库；正式支付库由用户启动时迁移。
 

@@ -226,7 +226,7 @@ public class OrderPaymentVerification {
             if(fault.equals("JSON")) {send(exchange,200,"{broken",null);return;}
             var response=HTTP.send(HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+paymentPort+"/internal/payments"))
                     .timeout(Duration.ofSeconds(10)).header("Content-Type","application/json")
-                    .header("X-Trace-Id",TRACE).POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                    .header("X-Trace-Id",TRACE).header("X-Order-Payment-Credential",orderServiceCredential()).POST(HttpRequest.BodyPublishers.ofString(body)).build(),
                     HttpResponse.BodyHandlers.ofString());
             if(fault.equals("LOST")) {Thread.sleep(1600);send(exchange,response.statusCode(),response.body(),null);return;}
             if(fault.equals("CLOSE")) {
@@ -314,6 +314,17 @@ public class OrderPaymentVerification {
                 }
             }
         }
+        // 升级验证会先使用旧schema；V5在启动升级时统一回填旧订单。
+        try(var columns=orderDb.getMetaData().getColumns(orderSchema,null,"t_order","quota_status")){
+            if(!columns.next())return no;
+        }
+        boolean released=Set.of("CREATE_FAILED","CLOSED","REVERSED").contains(status);
+        try(var update=orderDb.prepareStatement("UPDATE t_order SET quota_status=? WHERE order_no=?")){
+            update.setString(1,released?"RELEASED":"HELD");update.setString(2,no);update.executeUpdate();
+        }
+        if(!released)try(var quota=orderDb.prepareStatement("INSERT INTO t_user_session_quota(user_id,session_id,occupied_quantity) VALUES(?,1,2) ON DUPLICATE KEY UPDATE occupied_quantity=occupied_quantity+2")){
+            quota.setLong(1,user);quota.executeUpdate();
+        }
         return no;
     }
     HttpResponse<String> post(int port,String order,Long user,String body) throws Exception {
@@ -324,6 +335,7 @@ public class OrderPaymentVerification {
                 .header("X-Trace-Id",TRACE);
         if(user!=null)builder.header("X-Dev-User-Id",user.toString());
         if(path.equals("/internal/orders/payment-results"))builder.header("X-Payment-Order-Credential",serviceCredential());
+        if(path.startsWith("/internal/payments")||path.equals("/internal/payment-reversals"))builder.header("X-Order-Payment-Credential",orderServiceCredential());
         if(body!=null)builder.header("Content-Type","application/json");
         return HTTP.send(builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():
                 HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
@@ -337,6 +349,13 @@ public class OrderPaymentVerification {
         return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/payment-order.token"):Path.of(path)).strip();
     }
     String code(HttpResponse<String> response){return JSON.readTree(response.body()).path("code").asString();}
+    /** 订单访问支付与支付通知订单使用不同凭证。 */
+    String orderServiceCredential() throws Exception {
+        String configured=System.getenv("ORDER_PAYMENT_SERVICE_TOKEN");
+        if(configured!=null&&!configured.isBlank())return configured;
+        String path=System.getenv("ORDER_PAYMENT_CREDENTIAL_PATH");
+        return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/order-payment.token"):Path.of(path)).strip();
+    }
     String orderStatus(String no) throws Exception {
         try(var sql=orderDb.prepareStatement("SELECT status FROM t_order WHERE order_no=?")) {
             sql.setString(1,no);try(var result=sql.executeQuery()){result.next();return result.getString(1);}

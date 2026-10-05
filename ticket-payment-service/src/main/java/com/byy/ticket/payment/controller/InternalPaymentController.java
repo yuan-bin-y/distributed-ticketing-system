@@ -7,7 +7,7 @@ import com.byy.ticket.payment.vo.payment.PaymentVO;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-/** 订单调用方的支付内部入口；网关不路由 /internal，服务间认证尚待接入。 */
+/** 支付内部入口，仅允许通过Order服务凭证认证的创建与查询请求；网关不路由internal。 */
 @RestController
 @RequestMapping("/internal/payments")
 public class InternalPaymentController {

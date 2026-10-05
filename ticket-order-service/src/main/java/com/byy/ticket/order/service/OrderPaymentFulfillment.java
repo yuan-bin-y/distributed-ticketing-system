@@ -22,12 +22,14 @@ public class OrderPaymentFulfillment {
     private final PaymentClient payments;
     private final OrderPaymentReceiptTransaction receipts;
     private final Clock clock;
+    private final OrderTransactionService transactions;
 
     /** 注入订单持久化和两个远程客户端，不直接读取库存或支付数据库。 */
     public OrderPaymentFulfillment(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
-            PaymentClient payments, OrderPaymentReceiptTransaction receipts, Clock clock) {
+            PaymentClient payments, OrderPaymentReceiptTransaction receipts, Clock clock, OrderTransactionService transactions) {
         this.orders=orders; this.items=items; this.inventory=inventory;
         this.payments=payments; this.receipts=receipts; this.clock=clock;
+        this.transactions=transactions;
     }
 
     /** 到期关闭前回查支付；已付款则保存依据转入库存核对，未创建/未付款才继续释放。 */
@@ -87,13 +89,13 @@ public class OrderPaymentFulfillment {
         }
         var payment = requirePaymentEvidence(order);
         if ("SUCCESS".equals(payment.reversalStatus())) {
-            orders.finishReversal(order.getId(), token, payment.reversalNo());
+            transactions.finishReversalAndReleaseQuota(order.getId(), token, payment.reversalNo());
             return;
         }
         try {
             var reversal = payments.reverse(new PaymentReversalRequest(order.getPaymentNo(), order.getReversalReason()),
                     order.getOrderNo(), order.getTotalAmount());
-            orders.finishReversal(order.getId(), token, reversal.reversalNo());
+            transactions.finishReversalAndReleaseQuota(order.getId(), token, reversal.reversalNo());
         } catch (PaymentServiceCallException exception) {
             if (exception.getReason() != PaymentServiceCallException.Reason.CONFLICT) { throw exception; }
             review(order, token, "冲正状态或首次原因冲突，需人工核对");

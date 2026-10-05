@@ -1,9 +1,8 @@
-package com.byy.ticket.order.config;
+package com.byy.ticket.payment.config;
 
 import com.byy.ticket.security.config.TicketSecurityProperties;
 import com.byy.ticket.security.jwt.*;
 import com.byy.ticket.security.session.AuthSessionReader;
-import com.byy.ticket.security.service.*;
 import java.net.http.HttpClient;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.*;
@@ -13,14 +12,14 @@ import org.springframework.security.oauth2.jose.jws.SignatureAlgorithm;
 import org.springframework.security.oauth2.jwt.*;
 import org.springframework.web.client.RestTemplate;
 
-/** Order使用同步JwtDecoder；公钥验签、声明和Redis会话规则与网关一致。 */
+/** Payment公钥验签、声明和Redis会话校验，复用Order及Gateway的身份规则。 */
 @Configuration
-@EnableConfigurationProperties({TicketSecurityProperties.class,PaymentOrderCredentialProperties.class,OrderPaymentCredentialProperties.class})
-public class OrderJwtConfig {
-    /** 当前Servlet模型使用同步Redis读取，不访问Auth用户表。 */
+@EnableConfigurationProperties(TicketSecurityProperties.class)
+public class PaymentJwtConfig {
+    /** 同步Servlet请求读取共享登录会话，不读取Auth用户数据库。 */
     @Bean
     public AuthSessionReader authSessionReader(StringRedisTemplate redis,TicketSecurityProperties properties){return new AuthSessionReader(redis,properties);}
-    /** 公钥按需获取并缓存；远程获取有超时，网关通过也不能绕过Order独立校验。 */
+    /** 只持有公钥，获取设置超时并由Nimbus缓存；校验成功后框架自动建立Principal。 */
     @Bean
     public JwtDecoder accessTokenDecoder(TicketSecurityProperties properties,AuthSessionReader sessions){
         var client=HttpClient.newBuilder().connectTimeout(properties.jwkTimeout()).build();
@@ -30,10 +29,4 @@ public class OrderJwtConfig {
         base.setJwtValidator(new AccessTokenClaimsValidator(properties));
         return new SessionCheckingJwtDecoder(base,sessions);
     }
-    /** 内部通知凭证与用户JWT使用不同的校验入口。 */
-    @Bean
-    public PaymentOrderCredential paymentOrderCredential(PaymentOrderCredentialProperties properties)throws Exception{return new PaymentOrderCredential(properties);}
-    /** Order创建、查询及冲正支付时使用独立服务凭证，与回调凭证分离。 */
-    @Bean
-    public OrderPaymentCredential orderPaymentCredential(OrderPaymentCredentialProperties properties)throws Exception{return new OrderPaymentCredential(properties);}
 }

@@ -56,7 +56,7 @@ public class EventSession {
      */
     private LocalDateTime saleEndTime;
     /**
-     * 单次购票数量上限；当前未按用户统计历史购买次数。
+     * 每位用户在该场次的累计购票上限，由Order在正式下单时执行。
      */
     private Integer purchaseLimit;
     /**

@@ -4,7 +4,7 @@
 
 本阶段实现订单数据库、正式下单与归属查询、固定参数的库存预留、持久化退避和多实例任务领取、订单到期后的幂等释放。订单预览和原内部库存演示接口保留。
 
-每张订单只买一个票档，可以买多张。限购目前检查本次数量，尚未统计用户累计购买。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；后续库存确认与关闭竞争处理见 [成交与冲正恢复](payment-fulfillment.md)，成交为PAID，随后本地事务出票为COMPLETED，见 [电子票生成与查询](ticket-issuance.md)；无法履约冲正为REVERSED。没有MQ或Outbox。
+每张订单只买一个票档，可以买多张。正式下单已按用户与场次累计限购，见 [累计限购](purchase-quota.md)；预览只检查本次数量。[支付服务](payment-service.md)已提供能力，订单可通过 [发起支付入口](order-payment-create.md)创建支付单，付款通知与依据保存见 [付款通知](payment-notification.md)，正常进入 PAYMENT_CONFIRMING 并停止原关闭任务；后续库存确认与关闭竞争处理见 [成交与冲正恢复](payment-fulfillment.md)，成交为PAID，随后本地事务出票为COMPLETED，见 [电子票生成与查询](ticket-issuance.md)；无法履约冲正为REVERSED。没有MQ或Outbox。
 
 ## 启动与手动使用
 
@@ -14,16 +14,17 @@
 
 - t_order：订单、金额、状态、购买幂等键、到期时间、恢复时间与任务租约。
 - t_order_item：一单一个票档的名称、单价与数量快照。
+- t_user_session_quota：同一用户、同一场次的累计占用额度；订单的quota_status记录是否已归还。
 - flyway_schema_history：迁移执行历史。
 
-认证尚未接入。默认不信任请求携带的用户编号；新下单和查询入口需要服务端 Principal。仅本地验证可设置 ORDER_DEV_IDENTITY_ENABLED=true 并重新启动订单服务，显式接受 X-Dev-User-Id。这不是生产认证；生产应关闭开发身份并接入真实认证及服务间认证。
+真实Token与Redis会话认证已接入，见 [订单身份接入](order-auth.md)。默认不信任请求携带的用户编号；新下单和查询入口读取认证后的Principal。仅本地验证可设置 ORDER_DEV_IDENTITY_ENABLED=true 并重新启动订单服务，显式接受 X-Dev-User-Id。这不是生产认证；生产应关闭开发身份并接入真实认证及服务间认证。
 
 下单示例（票档必须替换为实际 ID）：
 
 ~~~http
 POST http://localhost:8060/api/orders
 Content-Type: application/json
-X-Dev-User-Id: 1
+Authorization: Bearer <accessToken>
 
 {"ticketTierId":3,"quantity":2,"idempotencyKey":"buy_001"}
 ~~~
@@ -34,7 +35,7 @@ X-Dev-User-Id: 1
 
 ~~~http
 GET http://localhost:8060/api/orders/{orderNo}
-X-Dev-User-Id: 1
+Authorization: Bearer <accessToken>
 ~~~
 
 成功结构仍为 Result<OrderDetailVO>。创建接口的 HTTP 202 表示订单已落库但库存处理尚未确定，客户端按订单编号查询或用原幂等键重复请求；HTTP 200 表示当前已有明确状态，需读取 data.status，CREATE_FAILED 也会返回原失败订单。字段校验 400，缺少身份 401，订单不存在或不归属当前用户 404，同键不同购买参数 409。库存预留发生在落库之后，未知结果由状态记录，不将超时等同于未扣库存。

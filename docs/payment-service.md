@@ -4,11 +4,11 @@
 
 ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务已经可靠发送成功通知，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后续确认库存或恢复冲正见 [成交与冲正恢复](payment-fulfillment.md)。
 
-当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后进入库存确认；关闭竞争根据原库存终态成交或全额模拟冲正，矛盾事实进入 REVIEW_REQUIRED。订单模拟支付交易链路已接通，成交后电子票生成与查询见 [电子票生成与查询](ticket-issuance.md)。真实认证、真实支付渠道、MQ 和 Outbox 尚未实现。
+当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后进入库存确认；关闭竞争根据原库存终态成交或全额模拟冲正，矛盾事实进入 REVIEW_REQUIRED。订单模拟支付交易链路已接通，成交后电子票生成与查询见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入，见 [支付身份接入](payment-auth.md)。真实支付渠道、MQ 和 Outbox 尚未实现。
 
 ## 启动
 
-先启动 MySQL 和 Nacos。IDEA 重新加载根 Maven 工程，启动类选择：
+先启动 MySQL、Redis、Nacos 和 Auth，并准备两个方向的持久化服务凭证，见 [支付身份接入](payment-auth.md)。IDEA 重新加载根 Maven 工程，启动类选择：
 
 - 模块：ticket-payment-service
 - 类：com.byy.ticket.payment.TicketPaymentApplication
@@ -20,16 +20,15 @@ ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创
 默认公共查询需要服务端可信 Principal，模拟成功和模拟冲正均关闭。只在本地演示时，在 Payment 的运行配置中设置：
 
 ~~~text
-PAYMENT_SIMULATION_ENABLED=true;PAYMENT_DEV_IDENTITY_ENABLED=true
+PAYMENT_SIMULATION_ENABLED=true
 ~~~
 
-第二个开关允许 X-Dev-User-Id；X-User-Id、正文 userId 均不能用作公共接口身份。未来接入 Auth 后优先使用服务端 Principal，并关闭开发身份开关。
+公共接口使用Bearer Access Token，从认证后的Principal取得用户ID；X-User-Id、正文userId不能用作身份。仅旧教学回归可显式设置PAYMENT_DEV_IDENTITY_ENABLED=true，回环直连且无Authorization才允许X-Dev-User-Id。
 
 也可在一个 PowerShell 窗口设置临时变量后从该窗口启动：
 
 ~~~powershell
 $env:PAYMENT_SIMULATION_ENABLED = 'true'
-$env:PAYMENT_DEV_IDENTITY_ENABLED = 'true'
 & 'C:\Users\RE\.jdks\ms-17.0.20\bin\java.exe' -jar ticket-payment-service/target/ticket-payment-service-1.0-SNAPSHOT.jar
 ~~~
 

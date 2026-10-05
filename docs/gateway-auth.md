@@ -6,7 +6,7 @@
 
 新增 `ticket-security` 公共认证库，没有启动类、数据库、用户实体或独立端口。网关通过Maven依赖使用它，后续业务服务可复用声明规则。
 
-网关准入已完成，Order随后也已独立接入Token及会话校验，见 [订单身份接入](order-auth.md)。网关Principal不会跨HTTP传播，Order从原Token建立自己的Principal。Payment公共用户接口及其余内部服务身份仍待接入。
+网关准入已完成，Order随后也已独立接入Token及会话校验，见 [订单身份接入](order-auth.md)。网关Principal不会跨HTTP传播，Order从原Token建立自己的Principal。Payment公共用户接口和Order调用Payment的服务凭证也已接入，见 [支付身份接入](payment-auth.md)；其余内部服务身份仍待接入。
 
 ## 代码阅读顺序
 
@@ -60,7 +60,7 @@ POST http://localhost:8060/api/auth/refresh
 POST http://localhost:8060/api/auth/logout  (Bearer Access Token)
 ```
 
-活动GET可匿名访问，无Token访问订单/支付会被网关返回401。Order现在可从转发Token取得真实用户ID；Payment公共用户接口尚未接入Token，仍可能返回401。网关不转发X-Dev-User-Id，不能依赖该头调用支付，下一步接入Payment用户身份。
+活动GET可匿名访问，无Token访问订单/支付会被网关返回401。Order和Payment从转发Token取得真实用户ID，校验支付单和订单归属。网关不转发X-Dev-User-Id；正常请求使用Bearer Access Token，见 [支付身份接入](payment-auth.md)。
 
 ## 验证结果与边界
 
