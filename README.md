@@ -6,17 +6,19 @@
 
 ## Auth 服务当前阶段
 
-新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth自身及网关准入已实现，订单、支付的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
+新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth、网关及订单Token接入已实现，支付公共用户接口的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
 
 ## 网关身份准入
 
-网关已增加Auth路由、JWT公钥验签、声明校验和响应式Redis会话检查，使用新增 `ticket-security` 公共库。活动GET、注册登录刷新可匿名；其他请求必须携带有效Access Token。退出后失效，Redis故障拒绝放行。外部X-Dev-User-Id/X-User-Id不再向下游转发。订单、支付自己的Token身份接入及内部服务身份仍待下一步，因此现在不能依靠网关认证直接完成真实用户下单。44项隔离验证通过，阅读顺序、配置和边界见 [网关认证](docs/gateway-auth.md)。
+网关已增加Auth路由、JWT公钥验签、声明校验和响应式Redis会话检查，使用新增 `ticket-security` 公共库。活动GET、注册登录刷新可匿名；其他请求必须携带有效Access Token。退出后失效，Redis故障拒绝放行。外部X-Dev-User-Id/X-User-Id不再向下游转发。订单已独立接入Token并可取得真实用户ID；支付公共用户接口Token接入及其他内部服务身份仍待后续步骤。44项隔离验证通过，阅读顺序、配置和边界见 [网关认证](docs/gateway-auth.md)。
 
 ## 订单下单与恢复
 
+订单已接入真实JWT身份，Payment通知Order也已使用独立服务凭证。代码阅读与启动步骤见 [订单身份接入](docs/order-auth.md)。本机通知凭证已生成，Order和Payment需同时重启；正常用户请求关闭开发身份开关，携带Access Token。37项认证闭环检查与135项成交/冲正回归通过；Payment公共用户接口Token接入是下一步。
+
 正式入口为 `POST /api/orders` 和 `GET /api/orders/{orderNo}`。创建请求为 `ticketTierId`、`quantity`、`idempotencyKey`。订单服务先校验活动规则，在本地事务中保存主表和购买快照，再在事务外调用库存；不确定结果保留 `STOCK_PENDING`，后台沿用原参数核对。预留成功进入待支付；未支付到期订单先进入 `CLOSING`，确认释放后 `CLOSED`。库存已售出等异常终态进入 `REVIEW_REQUIRED`，不自动释放。
 
-订单服务尚未接入Token，新入口默认需要可信身份。仅直连订单服务的本地学习可设置 `ORDER_DEV_IDENTITY_ENABLED=true`，重新启动后在请求中传 `X-Dev-User-Id: 1`。用户身份不放入下单 JSON。开发身份不是生产认证。完整请求、状态解释、事务边界、租约与重试配置见 [订单创建与恢复](docs/order-workflow.md)。
+订单服务已接入Token，正常请求携带Bearer Access Token。仅直连订单服务的本地学习可设置 `ORDER_DEV_IDENTITY_ENABLED=true`，重新启动后在请求中传 `X-Dev-User-Id: 1`。用户身份不放入下单 JSON。开发身份不是生产认证。完整请求、状态解释、事务边界、租约与重试配置见 [订单创建与恢复](docs/order-workflow.md)。
 
 本阶段的故障验证脚本为 `deploy/verify/verify_order_workflow.ps1`：使用真实 MySQL、独立订单/库存进程、活动 HTTP 桩和库存响应故障代理，验证幂等、并发、事务回滚、响应丢失、服务重启和到期释放。测试只使用随机测试库，结束后清理自身库和进程。
 
@@ -305,7 +307,7 @@ InternalOrderStockController
 
 响应为 `Result<OrderStockReservationVO>`，返回实际预留 ID、订单关联编号、场次、票档、数量、到期时间和状态。重复请求保持完全相同的 JSON 参数，包括到期时间；当前状态可能是 RESERVED、SOLD 或 RELEASED，终态结果不会重新扣库存。
 
-这是原内部库存协作接口，不创建订单、不检查活动规则或认证用户；正式下单使用下文的 `POST /api/orders`。网关不转发此内部路径，`/api/orders/preview` 不会预留库存。当前内部路径尚未接入服务身份校验。
+这是原内部库存协作接口，不创建订单、不检查活动规则或认证用户；正式下单使用下文的 `POST /api/orders`。网关不转发此内部路径，`/api/orders/preview` 不会预留库存。当前安全链默认拒绝该历史教学路径；支付通知内部入口使用独立服务凭证。
 
 符合契约的库存 400/404/409 分别保留为参数错误、资源不存在和业务冲突；依赖不可用返回 503，超时返回 504，响应字段/状态不一致或异常重定向返回 502。请求的 traceId 会传到库存服务。
 

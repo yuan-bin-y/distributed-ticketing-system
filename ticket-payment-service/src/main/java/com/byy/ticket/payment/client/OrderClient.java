@@ -3,6 +3,7 @@ package com.byy.ticket.payment.client;
 import com.byy.ticket.common.result.Result;
 import com.byy.ticket.common.trace.TraceIdContext;
 import com.byy.ticket.payment.config.PaymentNotificationProperties;
+import com.byy.ticket.security.service.PaymentOrderCredential;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.cloud.client.loadbalancer.LoadBalanced;
 import org.springframework.core.ParameterizedTypeReference;
@@ -14,11 +15,13 @@ import org.springframework.web.client.RestClient;
 @Component
 public class OrderClient {
     private final RestClient http;
+    private final PaymentOrderCredential credential;
     private static final ParameterizedTypeReference<Result<Receipt>> TYPE = new ParameterizedTypeReference<>() { };
 
     /** 注入启用服务发现的独立 Builder。 */
     public OrderClient(@LoadBalanced @Qualifier("orderNotificationRestClientBuilder") RestClient.Builder builder,
-                       PaymentNotificationProperties properties) {
+                       PaymentNotificationProperties properties, PaymentOrderCredential credential) {
+        this.credential = credential;
         http = builder.clone().baseUrl("http://" + properties.serviceId()).build();
     }
 
@@ -27,6 +30,7 @@ public class OrderClient {
         http.post().uri("/internal/orders/payment-results")
                 .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
                 .header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate())
+                .header(PaymentOrderCredential.HEADER, credential.value())
                 .body(new Notification(orderNo, paymentNo))
                 .exchange((request, response) -> {
                     if (!response.getStatusCode().is2xxSuccessful()) {

@@ -5,7 +5,7 @@ import com.byy.ticket.order.exception.OrderIdentityException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.stereotype.Component;
 
-/** 身份接入点：优先使用服务端 Principal；Auth 未接入时只有显式开发配置才接受开发身份头。 */
+/** 身份读取点：Security校验JWT后建立Principal；开发身份仅用于显式本机直连测试。 */
 @Component
 public class OrderIdentityResolver {
     private final OrderWorkflowProperties properties;

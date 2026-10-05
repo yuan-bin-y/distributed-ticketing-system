@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 用于验证订单服务调用库存服务的内部 HTTP 入口。
- * 当前只是预留调用入口，还没有创建实际订单、用户身份校验或支付流程。
+ * 历史教学入口不创建实际订单；当前Security默认拒绝此路径，正式购买使用/api/orders。
  */
 @RestController
 @RequestMapping("/internal/orders/stock-reservations")

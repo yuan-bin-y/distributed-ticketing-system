@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: ticket-order-service
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
   datasource:
     url: "${ORDER_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_order?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
     username: ${LOCAL_MYSQL_USERNAME}
@@ -22,8 +29,17 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  security:
+    issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
+    audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}
+    jwk-set-uri: ${AUTH_JWK_SET_URI:http://127.0.0.1:8065/.well-known/jwks.json}
+    jwk-timeout: 3s
+    redis-prefix: "ticket:auth:"
+  service-auth:
+    payment-order-token: ${PAYMENT_ORDER_SERVICE_TOKEN:}
+    credential-path: ${PAYMENT_ORDER_CREDENTIAL_PATH:.local/service-credentials/payment-order.token}
   order:
-    # Auth 接入前，仅在本地显式开启；接受 X-Dev-User-Id，不作为生产认证。
+    # 默认使用JWT。仅本机直连、显式开启且无Authorization时接受开发用户头。
     dev-identity-enabled: ${ORDER_DEV_IDENTITY_ENABLED:false}
     payment-window: ${ORDER_PAYMENT_WINDOW:15m}
     recovery-delay-ms: ${ORDER_RECOVERY_DELAY_MS:5000}

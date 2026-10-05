@@ -22,6 +22,9 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  service-auth:
+    payment-order-token: ${PAYMENT_ORDER_SERVICE_TOKEN:}
+    credential-path: ${PAYMENT_ORDER_CREDENTIAL_PATH:.local/service-credentials/payment-order.token}
   payment:
     # 仅在本地显式开启；模拟成功不代表接入真实支付渠道。
     simulation-enabled: ${PAYMENT_SIMULATION_ENABLED:false}

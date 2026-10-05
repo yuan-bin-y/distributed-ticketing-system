@@ -36,7 +36,7 @@
 
 第一版服务较多，按阶段启动：先 Gateway、Nacos、Event；再 Inventory、Order；最后 Auth、Payment。开发早期可用固定测试用户贯通订单链路，再接真实认证。
 
-Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单/支付身份接入和内部服务身份保护尚未完成，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
+Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单已完成Token身份接入及支付通知服务凭证保护；支付公共用户接口及其余内部服务身份仍待接入，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
 
 ## 3. 核心数据与状态
 

@@ -323,11 +323,19 @@ public class OrderPaymentVerification {
         var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(15))
                 .header("X-Trace-Id",TRACE);
         if(user!=null)builder.header("X-Dev-User-Id",user.toString());
+        if(path.equals("/internal/orders/payment-results"))builder.header("X-Payment-Order-Credential",serviceCredential());
         if(body!=null)builder.header("Content-Type","application/json");
         return HTTP.send(builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():
                 HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
     }
     JsonNode data(HttpResponse<String> response){return JSON.readTree(response.body()).path("data");}
+    /** 旧交易回归改用显式通知服务凭证，不再匿名调用新受保护入口。 */
+    String serviceCredential() throws Exception {
+        String configured=System.getenv("PAYMENT_ORDER_SERVICE_TOKEN");
+        if(configured!=null&&!configured.isBlank())return configured;
+        String path=System.getenv("PAYMENT_ORDER_CREDENTIAL_PATH");
+        return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/payment-order.token"):Path.of(path)).strip();
+    }
     String code(HttpResponse<String> response){return JSON.readTree(response.body()).path("code").asString();}
     String orderStatus(String no) throws Exception {
         try(var sql=orderDb.prepareStatement("SELECT status FROM t_order WHERE order_no=?")) {
