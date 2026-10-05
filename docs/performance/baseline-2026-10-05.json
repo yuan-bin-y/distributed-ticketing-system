@@ -1,0 +1,247 @@
+{
+  "time": "2026-10-05T15:34:21.203583900Z",
+  "model": "closed-loop finite requests; single host; real Nacos/Gateway; 64 users; one hot tier per phase",
+  "requestTimeoutSeconds": 60,
+  "businessJvmMaxHeapMiB": 512,
+  "orderRecovery": "defaults: delay 5s, batch 20, retry 5s..5m",
+  "phases": [
+    {
+      "phase": "ample_16",
+      "concurrency": 16,
+      "requests": 1000,
+      "seconds": 16.5624891,
+      "httpRps": 60.377398225729245,
+      "p50Ms": 259.2636,
+      "p95Ms": 307.1848,
+      "p99Ms": 350.637901,
+      "maxMs": 411.3387,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "finalWinners": 1000,
+      "finalRejected": 0,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 1000,
+      "reservationRows": 1000,
+      "settlementWaitSeconds": 0.0165331,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "ample_32",
+      "concurrency": 32,
+      "requests": 1000,
+      "seconds": 15.8992322,
+      "httpRps": 62.896118971078366,
+      "p50Ms": 505.5077,
+      "p95Ms": 559.818299,
+      "p99Ms": 593.7209,
+      "maxMs": 646.520799,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "finalWinners": 1000,
+      "finalRejected": 0,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 1000,
+      "reservationRows": 1000,
+      "settlementWaitSeconds": 0.014292601,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "ample_64",
+      "concurrency": 64,
+      "requests": 1000,
+      "seconds": 15.9012554,
+      "httpRps": 62.88811636847239,
+      "p50Ms": 1017.1074,
+      "p95Ms": 1092.655501,
+      "p99Ms": 1112.367901,
+      "maxMs": 1132.3322,
+      "httpStatus": {
+        "200": 999,
+        "202": 1
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 999,
+        "STOCK_PENDING": 1
+      },
+      "finalWinners": 1000,
+      "finalRejected": 0,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 1000,
+      "reservationRows": 1000,
+      "settlementWaitSeconds": 0.0117287,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "ample_128",
+      "concurrency": 128,
+      "requests": 1000,
+      "seconds": 15.6275974,
+      "httpRps": 63.98936281785708,
+      "p50Ms": 2002.1191,
+      "p95Ms": 2092.0325,
+      "p99Ms": 2121.8129,
+      "maxMs": 2454.4257,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "finalWinners": 1000,
+      "finalRejected": 0,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 1000,
+      "reservationRows": 1000,
+      "settlementWaitSeconds": 0.010749,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "ample_256",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 15.408430801,
+      "httpRps": 64.89953538520616,
+      "p50Ms": 3933.952299,
+      "p95Ms": 4176.248499,
+      "p99Ms": 4256.0312,
+      "maxMs": 4410.6965,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "finalWinners": 1000,
+      "finalRejected": 0,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 1000,
+      "reservationRows": 1000,
+      "settlementWaitSeconds": 0.0102275,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "scarce",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 7.243072299,
+      "httpRps": 138.06295984896673,
+      "p50Ms": 1719.2715,
+      "p95Ms": 2714.805701,
+      "p99Ms": 3131.3502,
+      "maxMs": 4164.519799,
+      "httpStatus": {
+        "200": 999,
+        "202": 1
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "CREATE_FAILED": 899,
+        "PENDING_PAYMENT": 100,
+        "STOCK_PENDING": 1
+      },
+      "finalWinners": 100,
+      "finalRejected": 900,
+      "orderRows": 1000,
+      "available": 0,
+      "reserved": 100,
+      "reservationRows": 100,
+      "settlementWaitSeconds": 0.012144701,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "duplicate",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 0.7735099,
+      "httpRps": 1292.8082756277586,
+      "p50Ms": 157.6443,
+      "p95Ms": 352.1597,
+      "p99Ms": 381.825801,
+      "maxMs": 395.8483,
+      "httpStatus": {
+        "200": 632,
+        "202": 368
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 632,
+        "STOCK_PENDING": 368
+      },
+      "finalWinners": 1,
+      "finalRejected": 0,
+      "orderRows": 1,
+      "available": 99,
+      "reserved": 1,
+      "reservationRows": 1,
+      "settlementWaitSeconds": 0.024397301,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "payment_success",
+      "concurrency": 32,
+      "requests": 100,
+      "seconds": 1.9739786,
+      "p50Ms": 85.1792,
+      "p95Ms": 1048.0895,
+      "p99Ms": 1079.0334,
+      "maxMs": 1079.1112,
+      "httpStatus": {
+        "200": 100
+      },
+      "responseCode": {
+        "OK": 100
+      },
+      "initialState": {
+        "SUCCESS": 100
+      },
+      "completedOrders": 100,
+      "endToEndSeconds": 55.7967631,
+      "integrity": "PASS",
+      "latencyOperation": "simulate-success only; phase wall time also includes payment creation",
+      "paymentOperationsPerSecond": 50.659110488837115,
+      "httpRequestsIncludingCreation": 200,
+      "completedOrdersPerSecond": 1.7922186600820935
+    }
+  ],
+  "completed": true,
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13650HX",
+    "logicalProcessors": 20,
+    "memoryGiB": 15.63,
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "java": "Microsoft OpenJDK 17.0.20",
+    "testHost": "single Windows host"
+  }
+}

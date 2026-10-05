@@ -1,6 +1,7 @@
 package com.byy.ticket.inventory.controller;
 
 import com.byy.ticket.common.result.Result;
+import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.inventory.dto.inventory.ReserveStockDTO;
 import com.byy.ticket.inventory.service.InventoryService;
 import com.byy.ticket.inventory.vo.inventory.StockReservationVO;
@@ -14,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 库存预留的内部 HTTP 入口，供订单服务的 InventoryClient 调用。
- * 接收 JSON 或路径参数，调用本服务 InventoryService，再包装 Result；当前未增加服务间认证。
+ * 接收 JSON 或路径参数，调用本服务 InventoryService，再包装 Result；进入业务前由安全链验证Order服务凭证。
  */
 @RestController
 @RequestMapping("/internal/stock-reservations")
@@ -35,7 +36,9 @@ public class InternalStockReservationController {
      */
     @PostMapping
     public Result<StockReservationVO> reserve(@Valid @RequestBody ReserveStockDTO request) {
-        return Result.success(inventoryService.reserve(request));
+        try(var span=PerformanceSpan.open("inventory.reserve.transaction")){
+            return Result.success(PerformanceSpan.measure("transaction",()->inventoryService.reserve(request)));
+        }
     }
 
     /**

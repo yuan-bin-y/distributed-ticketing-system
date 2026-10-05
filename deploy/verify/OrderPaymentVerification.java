@@ -336,6 +336,7 @@ public class OrderPaymentVerification {
         if(user!=null)builder.header("X-Dev-User-Id",user.toString());
         if(path.equals("/internal/orders/payment-results"))builder.header("X-Payment-Order-Credential",serviceCredential());
         if(path.startsWith("/internal/payments")||path.equals("/internal/payment-reversals"))builder.header("X-Order-Payment-Credential",orderServiceCredential());
+        if(path.startsWith("/internal/stock-reservations")||path.startsWith("/internal/stocks/"))builder.header("X-Order-Inventory-Credential",inventoryServiceCredential());
         if(body!=null)builder.header("Content-Type","application/json");
         return HTTP.send(builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():
                 HttpRequest.BodyPublishers.ofString(body)).build(),HttpResponse.BodyHandlers.ofString());
@@ -347,6 +348,11 @@ public class OrderPaymentVerification {
         if(configured!=null&&!configured.isBlank())return configured;
         String path=System.getenv("PAYMENT_ORDER_CREDENTIAL_PATH");
         return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/payment-order.token"):Path.of(path)).strip();
+    }
+    String inventoryServiceCredential()throws Exception{
+        String configured=System.getenv("ORDER_INVENTORY_SERVICE_TOKEN");if(configured!=null&&!configured.isBlank())return configured;
+        String path=System.getenv("ORDER_INVENTORY_CREDENTIAL_PATH");
+        return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/order-inventory.token"):Path.of(path)).strip();
     }
     String code(HttpResponse<String> response){return JSON.readTree(response.body()).path("code").asString();}
     /** 订单访问支付与支付通知订单使用不同凭证。 */

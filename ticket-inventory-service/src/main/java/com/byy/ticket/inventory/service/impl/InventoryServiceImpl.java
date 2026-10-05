@@ -1,6 +1,7 @@
 package com.byy.ticket.inventory.service.impl;
 
 import com.byy.ticket.common.exception.ResourceNotFoundException;
+import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.inventory.dto.inventory.ReserveStockDTO;
 import com.byy.ticket.inventory.exception.InventoryConflictException;
 import com.byy.ticket.inventory.mapper.StockReservationMapper;
@@ -56,8 +57,8 @@ public class InventoryServiceImpl implements InventoryService {
         candidate.setStatus(ReservationStatus.RESERVED.name());
 
         // 并发的相同 orderId 在唯一键处等待。不能依赖 JDBC 的“影响行数”区分插入和重复。
-        reservationMapper.insertOrKeep(candidate);
-        StockReservation existing = reservationMapper.selectByOrderIdForUpdate(request.orderId());
+        PerformanceSpan.measure("sql.reservation.insert",()->reservationMapper.insertOrKeep(candidate));
+        StockReservation existing = PerformanceSpan.measure("sql.reservation.lock",()->reservationMapper.selectByOrderIdForUpdate(request.orderId()));
         if (existing == null) {
             throw new IllegalStateException("无法读取已锁定的库存预留记录");
         }
@@ -71,7 +72,7 @@ public class InventoryServiceImpl implements InventoryService {
         if (!request.expiresAt().isAfter(LocalDateTime.now(clock))) {
             throw new IllegalArgumentException("首次预留的到期时间必须晚于当前时间");
         }
-        if (stockMapper.reserve(request.ticketTierId(), request.sessionId(), request.quantity()) != 1) {
+        if (PerformanceSpan.measure("sql.stock.update",()->stockMapper.reserve(request.ticketTierId(), request.sessionId(), request.quantity())) != 1) {
             TicketStock stock = stockMapper.selectForUpdate(request.ticketTierId());
             if (stock == null) {
                 throw new ResourceNotFoundException("票档库存不存在");

@@ -2,6 +2,7 @@ package com.byy.ticket.order.service;
 
 import com.byy.ticket.common.exception.ResourceNotFoundException;
 import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.dto.StockReservationRequest;
 import com.byy.ticket.order.client.dto.StockReservationResponse;
@@ -67,8 +68,8 @@ public class OrderStockWorkflow {
     /** 领取一张订单并推进；这里不加 Transactional，不能跨 HTTP 长时间持有订单数据库锁。 */
     public void advance(Long id) {
         String token = UUID.randomUUID().toString().replace("-", "");
-        if (orders.claim(id, token, properties.leaseDuration().toNanos() / 1000) != 1) { return; }
-        TicketOrder order = orders.selectById(id);
+        if (PerformanceSpan.measure("workflow.claim",()->orders.claim(id, token, properties.leaseDuration().toNanos() / 1000)) != 1) { return; }
+        TicketOrder order = PerformanceSpan.measure("workflow.lookup",()->orders.selectById(id));
         if (order == null || !token.equals(order.getLeaseToken())) { return; }
         try {
             if (OrderStatus.STOCK_PENDING.name().equals(order.getStatus())) {
@@ -104,8 +105,8 @@ public class OrderStockWorkflow {
             complete(order, token, OrderStatus.REVIEW_REQUIRED, null, "订单缺少购买快照");
             return;
         }
-        StockReservationResponse result = inventory.reserve(new StockReservationRequest(order.getOrderNo(),
-                item.getSessionId(), item.getTicketTierId(), item.getQuantity(), order.getExpiresAt()));
+        StockReservationResponse result = PerformanceSpan.measure("inventory.http",()->inventory.reserve(new StockReservationRequest(order.getOrderNo(),
+                item.getSessionId(), item.getTicketTierId(), item.getQuantity(), order.getExpiresAt())));
         order.setReservationId(result.reservationId());
         if ("RELEASED".equals(result.status())) {
             complete(order, token, OrderStatus.CLOSED, result.reservationId(), null);
@@ -114,8 +115,8 @@ public class OrderStockWorkflow {
         } else if (!order.getExpiresAt().isAfter(now())) {
             close(order, token);
         } else {
-            orders.finish(order.getId(), token, order.getStatus(), OrderStatus.PENDING_PAYMENT.name(),
-                    result.reservationId(), order.getExpiresAt(), null);
+            PerformanceSpan.measure("workflow.finish",()->orders.finish(order.getId(), token, order.getStatus(), OrderStatus.PENDING_PAYMENT.name(),
+                    result.reservationId(), order.getExpiresAt(), null));
         }
     }
 

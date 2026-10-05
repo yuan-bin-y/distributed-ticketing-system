@@ -2,7 +2,9 @@
 
 本文件先固定学习项目的业务范围与关键规则。实现过程中如需改变服务边界或交易语义，先更新本文件，再修改代码。
 
-当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。订单服务已本地事务出票并进入 COMPLETED，见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入网关、订单和支付；用户累计限购已实现，见 [累计限购](purchase-quota.md)；其余内部服务认证、验票、Outbox/MQ 尚未实现。
+第一版后端闭环、内部服务身份与功能验收已完成，压测结果已归档。交付范围和演示以[第一版交付说明](v1-delivery.md)为准；本文保留实施历史，MQ/Outbox、限流及治理技术表中的未落地项目属于后续计划。
+
+当前下单阶段已接入订单数据库、购买幂等、活动规则校验、库存预留、持久化恢复和未支付到期释放，具体实现约定见 [订单创建与恢复](order-workflow.md)。Payment 已独立提供支付单、模拟成功、查询和全额冲正，支付事实与待通知状态在同一本地事务中提交，见 [支付服务](payment-service.md)。可靠通知与Order付款依据已接入，正常进入 PAYMENT_CONFIRMING，后续核对库存成交为 PAID，库存已释放时恢复冲正为 REVERSED。矛盾事实进入 REVIEW_REQUIRED，见 [成交与冲正恢复](payment-fulfillment.md)。订单服务已本地事务出票并进入 COMPLETED，见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入网关、订单和支付；用户累计限购已实现，见 [累计限购](purchase-quota.md)；Event与Inventory内部服务认证已完成，见[内部服务身份](service-identity.md)；验票、Outbox/MQ尚未实现。
 
 当前实施顺序按学习讨论调整：先以 HTTP、幂等和持久化恢复完成第一版业务闭环，再引入 MQ 与 Outbox。Payment 的通知字段记录待发送事实，后台已发送 HTTP 通知并恢复失败；Order保存依据并恢复库存确认与无法履约冲正。后文中的 MQ/Outbox 描述为后续演进目标。
 
@@ -26,19 +28,20 @@
 
 | 组件 | 拥有的能力与数据 | 对外协作 |
 | --- | --- | --- |
-| `ticket-gateway` | 入口路由、身份校验、基础限流；无业务表 | 将请求路由到业务服务 |
+| `ticket-gateway` | 入口路由、身份校验；无业务表，限流待后续实现 | 将请求路由到业务服务 |
 | `ticket-auth-service` | 用户、凭证、登录状态 | 提供身份信息；其他服务不读其数据库 |
 | `ticket-event-service` | 活动、场次、票档、开售规则 | 提供活动查询与规则快照 |
 | `ticket-inventory-service` | 票档库存、预留记录、售出记录 | 提供预留/确认/释放命令 |
 | `ticket-order-service` | 订单、订单项、状态和购买幂等键 | 协调下单，处理支付结果与超时 |
-| `ticket-payment-service` | 模拟支付单、支付结果、模拟冲正记录 | 产生支付结果事件，处理迟到成功 |
+| `ticket-payment-service` | 模拟支付单、支付结果、模拟冲正记录 | HTTP可靠通知支付结果，处理迟到成功 |
 | `ticket-common` | 极少量通用异常、响应等基础代码 | 不放业务实体和数据库访问代码 |
+| `ticket-security` | JWT和服务凭证等公共认证支持 | Maven代码依赖，不独立运行 |
 
 服务分别持有自己的数据库或独立 schema；**只允许服务修改自己拥有的数据**。同步调用用于下单所需的即时校验和预留，消息用于支付结果等跨服务状态传播。跨服务共享的请求/响应契约可放在独立 API 模块，但不能把所有服务的实体、Mapper 和业务逻辑集中进去。
 
 第一版服务较多，按阶段启动：先 Gateway、Nacos、Event；再 Inventory、Order；最后 Auth、Payment。开发早期可用固定测试用户贯通订单链路，再接真实认证。
 
-Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单已完成Token身份接入及支付通知服务凭证保护；支付公共用户接口及Order调用Payment的服务凭证也已接入，其余内部服务身份仍待接入，见 [支付身份接入](payment-auth.md)，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
+Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新和退出，默认8065。网关已接入Auth路由、JWT及响应式会话校验，公共认证库为ticket-security；订单已完成Token身份接入及支付通知服务凭证保护；支付公共用户接口及Order调用Payment的服务凭证也已接入，Event购票规则及Inventory协作已接入独立服务身份，见[内部服务身份](service-identity.md)，见 [支付身份接入](payment-auth.md)，详见 [Auth服务](auth-service.md)、[网关认证](gateway-auth.md)。
 
 ## 3. 核心数据与状态
 
@@ -52,7 +55,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 
 ### 下单
 
-1. Gateway 完成入口校验和限流；订单服务校验用户、开售时间和限购规则。
+1. Gateway 完成入口身份校验；订单服务校验用户、开售时间和限购规则。入口限流为后续优化。
 2. 客户端提供请求幂等键；订单服务用唯一约束阻止重试产生第二笔订单。
 3. 订单服务先在自己的本地事务中保存主表与价格快照，状态为 `STOCK_PENDING`，提交后再通过HTTP调用库存预留；库存在本地事务中保存预留及条件扣减，返回 `reservation_id`。
 4. 订单记录预留编号和待支付状态；结果不确定时用原编号与参数重试核对。订单后台任务负责到期关闭，先保存 `CLOSING` 再请求释放，确认后 `CLOSED`。当前库存没有自主到期释放任务；不能仅凭时间释放已售出库存。支付接入后需进一步核对付款证据。
@@ -95,7 +98,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 
 1. **基础链路**：父 POM/BOM、Nacos、Gateway、Event 服务；通过网关查询数据库中的活动与场次。
 2. **抢票链路**：Inventory 与 Order 服务；完成预留、订单创建、限购、幂等和到期释放。
-3. **支付闭环**：Auth、模拟 Payment、Outbox/MQ、出票及迟到支付补偿。
+3. **支付闭环**：Auth、模拟 Payment、HTTP可靠通知、出票及迟到支付补偿；Outbox/MQ后续引入。
 4. **治理与证明**：限流、故障隔离、监控追踪、并发与故障测试，形成可复现的结果报告。
 
 ### 当前 Order → Inventory 接入步骤
@@ -113,7 +116,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 - `t_ticket_stock`：票档 ID 为主键，保存所属场次、总量、可用量、预留量、售出量。数据库检查各数量非负且 `总量 = 可用量 + 预留量 + 售出量`。场次与票档 ID 只是活动服务的标识，不建立跨库外键；票档 ID 全局唯一，因此也能唯一确定场次下的库存。
 - `t_stock_reservation`：独立的 32 位 UUID 预留 ID，唯一的订单关联编号 `order_id`，以及场次、票档、数量、到期时间、状态。第一版每个订单只买一个票档，订单服务应在预留前生成稳定的订单编号，后续重试沿用同一编号和参数。
 - 预留请求参数为 `orderId`、`sessionId`、`ticketTierId`、`quantity`、`expiresAt`；时间为东八区本地时间，精度最多毫秒。首次预留到期时间必须晚于当前时间。同一编号必须携带相同参数，重复请求返回已有记录的当前状态；已经释放的编号不会再次扣库存。
-- 内部接口为 `POST /internal/stock-reservations`、`POST /internal/stock-reservations/{reservationId}/confirm`、`POST /internal/stock-reservations/{reservationId}/release`，另提供预留和库存的内部查询。网关不添加库存内部路由，服务身份认证按后续认证阶段实现。
+- 内部接口为 `POST /internal/stock-reservations`、`POST /internal/stock-reservations/{reservationId}/confirm`、`POST /internal/stock-reservations/{reservationId}/release`，另提供预留和库存的内部查询。网关不添加库存内部路由，各路径和HTTP方法已独立验证Order服务凭证。
 - 预留先通过唯一键插入或锁定预留记录，再用 `available_quantity >= quantity` 的条件更新扣可用量、加预留量；库存不存在、场次不匹配或不足时整笔事务回滚。重复键不会覆盖原请求参数。
 - 确认和释放先锁定同一预留记录，再按 `RESERVED` 前置状态修改记录和库存；同方向重复操作直接返回结果，互相冲突的终态操作返回 409。各命令采用本地事务，所有路径遵守先预留记录、后库存记录的锁顺序。锁竞争失败返回可重试的 503，不能当作成功。
 - 当前仅实现数据库库存命令。库存现可通过Event管理流程幂等初始化，演示SQL仍可用于旧教学数据；不自动读取活动库，不接 Redis/MQ，不创建订单。到期时间用于后续核对任务，本阶段不会仅凭到期时间自动释放库存。
@@ -124,7 +127,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 
 订单服务骨架阶段（历史）：默认端口 8062，依赖 Web、Nacos Discovery、LoadBalancer 和 ticket-common。编译打包已通过，临时端口 18062 的连通接口和 Nacos 健康注册已验证，验证进程已停止。该阶段尚无订单数据库；远程调用、网关路由及订单落库已在后续步骤完成。
 
-活动服务已提供 GET /internal/ticket-tiers/{ticketTierId}/purchase-rule：按启用票档、已发布场次和已发布活动返回购票规则，非法 ID 返回 400，不存在或不可展示的资源返回 404。编译、真实数据库状态筛选及 HTTP 错误响应验证已通过，临时测试记录已回滚。接口不修改表结构；购票规则现已由后续订单预览流程调用，开售时间和本次数量由订单服务校验。内部接口尚未接入服务身份认证，现有网关未转发该路径。
+活动服务已提供 GET /internal/ticket-tiers/{ticketTierId}/purchase-rule：按启用票档、已发布场次和已发布活动返回购票规则，非法 ID 返回 400，不存在或不可展示的资源返回 404。编译、真实数据库状态筛选及 HTTP 错误响应验证已通过，临时测试记录已回滚。接口不修改表结构；购票规则现已由后续订单预览流程调用，开售时间和本次数量由订单服务校验。内部接口已接入Order服务凭证校验，网关不转发该路径。
 
 已实现 Order 的 EventClient（RestClient + LoadBalancer），通过 Nacos 按服务名调用 Event；新增 POST /api/orders/preview、订单网关路由及统一远程错误处理。购票预览按东八区检查开售区间和本次数量，金额使用 BigDecimal，不预留库存或创建订单。已验证两个实例的负载均衡、调用超时及其他故障，并在独立端口和 Nacos 分组验证真实 Gateway → Order → Event → MySQL 链路，临时测试记录及进程已清理。该预览链路尚未接入库存预留、累计限购、购买幂等、真实订单和支付。
 
@@ -138,4 +141,4 @@ Order → Inventory 接入阶段（历史）：InventoryClient 通过 Nacos 服�
 
 订单流程使用单独事务 Bean 保存订单和名称/价格快照，提交后通过原 InventoryClient 预留。`OrderStockWorkflow` 用条件更新领取任务、带令牌更新状态；库存结果不确定时持久化退避，后台使用原编号和原参数恢复，服务重启后继续。未支付到期订单先保存 CLOSING，再幂等释放；已售出或异常终态保留 REVIEW_REQUIRED 和日志。后续付款依据、到期支付回查及关闭竞争恢复已经接入，见 [成交与冲正恢复](payment-fulfillment.md)。
 
-新验证使用真实 MySQL、独立进程和随机测试库；活动 HTTP 桩和库存故障代理注入响应丢失。验证过程及边界详见 `docs/order-workflow.md`，不将正确性验证宣称为高吞吐量压测。Outbox/MQ 在支付阶段接入，当前不声明已完成完整 Saga。
+新验证使用真实 MySQL、独立进程和随机测试库；活动 HTTP 桩和库存故障代理注入响应丢失。验证过程及边界详见 `docs/order-workflow.md`，不将正确性验证宣称为高吞吐量压测。Outbox/MQ 留到第二版，第一版采用本地事务、持久化进度和HTTP恢复协作。

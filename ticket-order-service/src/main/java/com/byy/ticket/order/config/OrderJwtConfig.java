@@ -15,7 +15,7 @@ import org.springframework.web.client.RestTemplate;
 
 /** Order使用同步JwtDecoder；公钥验签、声明和Redis会话规则与网关一致。 */
 @Configuration
-@EnableConfigurationProperties({TicketSecurityProperties.class,PaymentOrderCredentialProperties.class,OrderPaymentCredentialProperties.class})
+@EnableConfigurationProperties({TicketSecurityProperties.class,PaymentOrderCredentialProperties.class,OrderPaymentCredentialProperties.class,OrderEventCredentialProperties.class,OrderInventoryCredentialProperties.class})
 public class OrderJwtConfig {
     /** 当前Servlet模型使用同步Redis读取，不访问Auth用户表。 */
     @Bean
@@ -36,4 +36,8 @@ public class OrderJwtConfig {
     /** Order创建、查询及冲正支付时使用独立服务凭证，与回调凭证分离。 */
     @Bean
     public OrderPaymentCredential orderPaymentCredential(OrderPaymentCredentialProperties properties)throws Exception{return new OrderPaymentCredential(properties);}
+    /** 查询活动规则使用独立Order服务凭证。 */
+    @Bean public OrderEventCredential orderEventCredential(OrderEventCredentialProperties properties)throws Exception{return new OrderEventCredential(properties);}
+    /** 库存预留、确认、释放及查询使用独立凭证，不复用Event初始化凭证。 */
+    @Bean public OrderInventoryCredential orderInventoryCredential(OrderInventoryCredentialProperties properties)throws Exception{return new OrderInventoryCredential(properties);}
 }

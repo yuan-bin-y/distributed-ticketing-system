@@ -1,0 +1,116 @@
+{
+  "time": "2026-10-05T16:16:01.379402900Z",
+  "model": "closed-loop; 256 concurrency; 64 users; Inventory pool10/hot1 vs pool30/hot1 vs pool10/10 tiers in ONE session; baseline repeat",
+  "completed": true,
+  "machine": {
+    "cpu": "13th Gen Intel(R) Core(TM) i7-13650HX",
+    "logicalProcessors": 20,
+    "memoryGiB": 15.63,
+    "os": "Microsoft Windows NT 10.0.26200.0",
+    "java": "Microsoft OpenJDK 17.0.20",
+    "testHost": "single Windows host"
+  },
+  "requestTimeoutSeconds": 60,
+  "businessJvmMaxHeapMiB": 512,
+  "orderRecovery": "defaults: delay 5s, batch 20, retry 5s..5m",
+  "phases": [
+    {
+      "phase": "A_pool10_hot1",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 15.9920759,
+      "httpRps": 62.53096885314307,
+      "p50Ms": 4038.5627,
+      "p95Ms": 4247.131401,
+      "p99Ms": 4457.3179,
+      "maxMs": 4638.4086,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "inventoryPoolSize": 10,
+      "tierCount": 1,
+      "finalWinners": 1000,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "B_pool30_hot1",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 15.7622612,
+      "httpRps": 63.44267407521454,
+      "p50Ms": 4104.430999,
+      "p95Ms": 4227.084,
+      "p99Ms": 4292.0762,
+      "maxMs": 4543.8888,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "inventoryPoolSize": 30,
+      "tierCount": 1,
+      "finalWinners": 1000,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "C_pool10_tiers10",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 6.4287438,
+      "httpRps": 155.551384704427,
+      "p50Ms": 1483.3196,
+      "p95Ms": 2370.0313,
+      "p99Ms": 2728.594101,
+      "maxMs": 3769.9556,
+      "httpStatus": {
+        "200": 999,
+        "202": 1
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 999,
+        "STOCK_PENDING": 1
+      },
+      "inventoryPoolSize": 10,
+      "tierCount": 10,
+      "finalWinners": 1000,
+      "integrity": "PASS"
+    },
+    {
+      "phase": "A2_pool10_hot1",
+      "concurrency": 256,
+      "requests": 1000,
+      "seconds": 15.312094199,
+      "httpRps": 65.30785319132296,
+      "p50Ms": 3977.0667,
+      "p95Ms": 4171.242,
+      "p99Ms": 4208.3732,
+      "maxMs": 4245.2455,
+      "httpStatus": {
+        "200": 1000
+      },
+      "responseCode": {
+        "OK": 1000
+      },
+      "initialState": {
+        "PENDING_PAYMENT": 1000
+      },
+      "inventoryPoolSize": 10,
+      "tierCount": 1,
+      "finalWinners": 1000,
+      "integrity": "PASS"
+    }
+  ]
+}

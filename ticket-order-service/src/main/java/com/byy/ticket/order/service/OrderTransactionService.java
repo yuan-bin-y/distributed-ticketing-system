@@ -1,6 +1,7 @@
 package com.byy.ticket.order.service;
 
 import com.byy.ticket.order.client.dto.TicketPurchaseRuleResponse;
+import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.order.dto.order.OrderCreateDTO;
 import com.byy.ticket.order.mapper.OrderMapper;
 import com.byy.ticket.order.mapper.OrderItemMapper;
@@ -43,7 +44,7 @@ public class OrderTransactionService {
         order.setExpiresAt(expiresAt);
         order.setNextAttemptAt(now);
         order.setAttemptCount(0);
-        orders.insert(order);
+        PerformanceSpan.measure("sql.order.insert",()->orders.insert(order));
         OrderItem item = new OrderItem();
         item.setOrderId(order.getId());
         item.setEventId(rule.eventId());
@@ -53,9 +54,9 @@ public class OrderTransactionService {
         item.setUnitPrice(rule.price());
         item.setQuantity(request.quantity());
         item.setSubtotalAmount(amount);
-        items.insert(item);
-        quotas.ensureExists(userId, rule.sessionId());
-        if (quotas.occupy(userId, rule.sessionId(), request.quantity(), rule.purchaseLimit()) != 1) {
+        PerformanceSpan.measure("sql.item.insert",()->items.insert(item));
+        PerformanceSpan.measure("sql.quota.ensure",()->quotas.ensureExists(userId, rule.sessionId()));
+        if (PerformanceSpan.measure("sql.quota.occupy",()->quotas.occupy(userId, rule.sessionId(), request.quantity(), rule.purchaseLimit())) != 1) {
             throw new OrderConflictException("该场次累计购买数量超过限购");
         }
         return order;

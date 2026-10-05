@@ -17,11 +17,12 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
 import tools.jackson.databind.ObjectMapper;
-/** 本阶段仅保护新初始化接口；原Order库存协作入口保持现有契约，后续单独接入服务身份。 */
+/** 初始化只接受Event，库存交易只接受Order；其余入口默认拒绝。 */
 @Configuration
-@EnableConfigurationProperties(EventInventoryCredentialProperties.class)
+@EnableConfigurationProperties({EventInventoryCredentialProperties.class,OrderInventoryCredentialProperties.class})
 public class InitializationSecurityConfig {
     @Bean EventInventoryCredential eventInventoryCredential(EventInventoryCredentialProperties properties)throws IOException{return new EventInventoryCredential(properties);}
+    @Bean OrderInventoryCredential orderInventoryCredential(OrderInventoryCredentialProperties properties)throws IOException{return new OrderInventoryCredential(properties);}
     @Bean @Order(1)
     SecurityFilterChain initializationSecurity(HttpSecurity http,EventInventoryCredential credential,ObjectMapper json)throws Exception{
         common(http);
@@ -41,8 +42,24 @@ public class InitializationSecurityConfig {
                         .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
     }
     @Bean @Order(2)
-    SecurityFilterChain existingInventorySecurity(HttpSecurity http)throws Exception{common(http);return http.authorizeHttpRequests(auth->auth.anyRequest().permitAll()).build();}
+    SecurityFilterChain orderInventorySecurity(HttpSecurity http,OrderInventoryCredential credential,ObjectMapper json)throws Exception{
+        common(http);
+        return http.securityMatcher("/internal/**")
+                .addFilterBefore(new ServiceCredentialFilter(OrderInventoryCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
+                .authorizeHttpRequests(auth->auth
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stock-reservations/{reservationId}","/internal/stocks/{ticketTierId}").hasRole("ORDER_SERVICE")
+                        .anyRequest().denyAll())
+                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
+                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+    }
+    /** 不公开库存写接口，也不允许未列出的内部方法。 */
+    @Bean @Order(3) SecurityFilterChain inventoryFallback(HttpSecurity http,ObjectMapper json)throws Exception{
+        common(http);return http.authorizeHttpRequests(auth->auth.anyRequest().denyAll())
+                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
+                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+    }
     private void common(HttpSecurity http)throws Exception{http.csrf(c->c.disable()).formLogin(c->c.disable()).httpBasic(c->c.disable()).logout(c->c.disable())
             .requestCache(c->c.disable()).sessionManagement(c->c.sessionCreationPolicy(SessionCreationPolicy.STATELESS));}
-    private void write(HttpServletResponse response,ObjectMapper json,int status)throws IOException{response.setStatus(status);response.setContentType("application/json;charset=UTF-8");json.writeValue(response.getWriter(),new Result<Void>("UNAUTHORIZED","无权调用库存初始化接口",null,com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));}
+    private void write(HttpServletResponse response,ObjectMapper json,int status)throws IOException{response.setStatus(status);response.setContentType("application/json;charset=UTF-8");json.writeValue(response.getWriter(),new Result<Void>(status==401?"UNAUTHORIZED":"FORBIDDEN","身份凭证缺失、无效或无权调用此接口",null,com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));}
 }

@@ -8,19 +8,34 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.web.SecurityFilterChain;
 import tools.jackson.databind.ObjectMapper;
+import com.byy.ticket.security.service.*;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.core.annotation.Order;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 /** 网关和Event各自验证管理员Token；直接访问Event也不能绕过权限。 */
 @Configuration
+@EnableConfigurationProperties(OrderEventCredentialProperties.class)
 public class EventSecurityConfig {
-    @Bean SecurityFilterChain eventSecurity(HttpSecurity http,JwtDecoder decoder,ObjectMapper json)throws Exception{
+    @Bean OrderEventCredential orderEventCredential(OrderEventCredentialProperties properties)throws java.io.IOException{return new OrderEventCredential(properties);}
+    /** 内部购票规则只接受Order服务身份；用户和管理员JWT不能替代服务凭证。 */
+    @Bean @Order(1) SecurityFilterChain internalEventSecurity(HttpSecurity http,OrderEventCredential credential,ObjectMapper json)throws Exception{
+        return http.securityMatcher("/internal/**").csrf(c->c.disable()).formLogin(c->c.disable()).httpBasic(c->c.disable()).logout(c->c.disable())
+                .requestCache(c->c.disable()).sessionManagement(c->c.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .addFilterBefore(new ServiceCredentialFilter(OrderEventCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
+                .authorizeHttpRequests(auth->auth.requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/ticket-tiers/{ticketTierId}/purchase-rule").hasRole("ORDER_SERVICE").anyRequest().denyAll())
+                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
+                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+    }
+    @Bean @Order(2) SecurityFilterChain eventSecurity(HttpSecurity http,JwtDecoder decoder,ObjectMapper json)throws Exception{
         return http.csrf(c->c.disable()).formLogin(c->c.disable()).httpBasic(c->c.disable()).logout(c->c.disable())
                 .requestCache(c->c.disable()).sessionManagement(c->c.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth->auth.requestMatchers("/api/admin/**").hasRole("ADMIN")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/events/**","/internal/ticket-tiers/{ticketTierId}/purchase-rule").permitAll()
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/api/events/**").permitAll()
                         .anyRequest().denyAll())
                 .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
                         .accessDeniedHandler((request,response,error)->write(response,json,403)))
                 .oauth2ResourceServer(oauth->oauth.jwt(jwt->jwt.decoder(decoder).jwtAuthenticationConverter(UserRoleAuthorities.converter()))
                         .authenticationEntryPoint((request,response,error)->write(response,json,401))).build();
     }
-    private void write(HttpServletResponse response,ObjectMapper json,int status)throws java.io.IOException{response.setStatus(status);response.setContentType("application/json;charset=UTF-8");json.writeValue(response.getWriter(),new Result<Void>("UNAUTHORIZED","需要管理员身份或有效登录凭证",null,com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));}
+    private void write(HttpServletResponse response,ObjectMapper json,int status)throws java.io.IOException{response.setStatus(status);response.setContentType("application/json;charset=UTF-8");json.writeValue(response.getWriter(),new Result<Void>(status==401?"UNAUTHORIZED":"FORBIDDEN","身份凭证缺失、无效或无权调用此接口",null,com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));}
 }

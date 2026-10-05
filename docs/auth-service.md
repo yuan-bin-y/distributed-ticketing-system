@@ -4,7 +4,7 @@
 
 `ticket-auth-service` 独立运行，默认端口8065，通过Nacos注册；只访问自己的 `ticket_auth` 数据库。首次启动 JDBC 创建数据库，Flyway V1 建立 `t_user`，V2增加USER/ADMIN角色。
 
-已完成注册、登录、刷新、当前会话退出，RSA签名及公钥文档。网关已完成Auth路由及Token/会话校验，可通过8060访问这些认证接口，见 [网关认证](gateway-auth.md)。订单Token接入及Payment通知Order的服务身份已完成；支付公共用户接口及Order调用Payment的内部凭证也已完成，见 [支付身份接入](payment-auth.md)。Event管理员入口和Inventory初始化服务凭证已接入，见 [活动管理](event-administration.md)；其余原内部业务入口保护仍属后续阶段。
+已完成注册、登录、刷新、当前会话退出，RSA签名及公钥文档。网关已完成Auth路由及Token/会话校验，可通过8060访问这些认证接口，见 [网关认证](gateway-auth.md)。订单Token接入及Payment通知Order的服务身份已完成；支付公共用户接口及Order调用Payment的内部凭证也已完成，见 [支付身份接入](payment-auth.md)。Event管理员入口和Inventory初始化服务凭证已接入，见 [活动管理](event-administration.md)；Event购票规则与Inventory交易接口已接入[内部服务身份](service-identity.md)。第一版交付范围见[交付说明](v1-delivery.md)。
 
 本服务是项目自己的账号认证接口，不是完整OAuth2/OIDC授权服务器。
 

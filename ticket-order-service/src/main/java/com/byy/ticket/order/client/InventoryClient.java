@@ -14,6 +14,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.MediaType;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.stereotype.Component;
+import com.byy.ticket.security.service.OrderInventoryCredential;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -41,8 +42,9 @@ public class InventoryClient {
      * 使用库存专用、带负载均衡的 Builder，复制后把库存服务名设置成 baseUrl。
      */
     public InventoryClient(@LoadBalanced @Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,
-                           InventoryClientProperties properties) {
-        restClient = builder.clone().baseUrl("http://" + properties.serviceId()).build();
+                           InventoryClientProperties properties, OrderInventoryCredential credential) {
+        restClient = builder.clone().baseUrl("http://" + properties.serviceId())
+                .defaultHeader(OrderInventoryCredential.HEADER, credential.value()).build();
     }
 
     /**

@@ -78,7 +78,7 @@ PENDING → 领取令牌及租约 → HTTP初始化Inventory
 java deploy/auth/GenerateServiceCredential.java .local/service-credentials/event-inventory.token
 ```
 
-可以用 `EVENT_INVENTORY_CREDENTIAL_PATH` 指定绝对文件路径，或用 `EVENT_INVENTORY_SERVICE_TOKEN` 指定64位小写十六进制随机凭证。文件缺失或格式错误会启动失败。跨主机使用TLS并独立分发凭证；现有Order库存预留/确认/释放入口与Event购票规则入口仍保留原有认证范围，本次只新增初始化服务凭证及管理员认证。
+可以用 `EVENT_INVENTORY_CREDENTIAL_PATH` 指定绝对文件路径，或用 `EVENT_INVENTORY_SERVICE_TOKEN` 指定64位小写十六进制随机凭证。文件缺失或格式错误会启动失败。跨主机使用TLS并独立分发凭证；Order库存预留/确认/释放入口及Event购票规则入口现已接入独立服务凭证，详见[内部服务身份](service-identity.md)。
 
 Event Flyway V2在已有三张表增加幂等与准备字段，不新增Event业务表；Inventory复用原库存表，没有新迁移。历史票档标记LEGACY，不推断库存已准备好。既有已发布活动保持查询契约，历史草稿不能未经准备通过新发布入口。
 
@@ -100,4 +100,4 @@ Event Flyway V2在已有三张表增加幂等与准备字段，不新增Event业
 
 测试关闭Nacos，业务调用使用固定SimpleDiscoveryClient实例、Gateway固定HTTP路由。本次验证业务和恢复正确性，不声称重复验证Nacos注册或完成性能压测。
 
-已通过79项管理/购票检查及原Auth的59项回归检查。
+增加内部服务身份验证后，已通过104项管理/购票及鉴权检查；此前Auth的59项回归检查已通过。

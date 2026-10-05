@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.converter.HttpMessageConversionException;
 import org.springframework.stereotype.Component;
+import com.byy.ticket.security.service.OrderEventCredential;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -34,8 +35,9 @@ public class EventClient {
      * 真正请求时由 LoadBalancer 将服务名解析成可用实例地址；clone 避免修改共享 Builder。
      */
     public EventClient(@LoadBalanced @Qualifier("eventRestClientBuilder") RestClient.Builder builder,
-                       EventClientProperties properties) {
-        this.restClient = builder.clone().baseUrl("http://" + properties.serviceId()).build();
+                       EventClientProperties properties, OrderEventCredential credential) {
+        this.restClient = builder.clone().baseUrl("http://" + properties.serviceId())
+                .defaultHeader(OrderEventCredential.HEADER, credential.value()).build();
     }
 
     /**

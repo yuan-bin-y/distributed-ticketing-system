@@ -1,6 +1,7 @@
 package com.byy.ticket.order.service.impl;
 
 import com.byy.ticket.order.client.EventClient;
+import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.PaymentClient;
 import com.byy.ticket.order.client.dto.PaymentCreateRequest;
@@ -70,10 +71,15 @@ public class OrderServiceImpl implements OrderService {
      */
     @Override
     public OrderDetailVO create(Long userId, OrderCreateDTO request) {
+        try(var span=PerformanceSpan.open("order.create")){
+            return PerformanceSpan.measure("business",()->createMeasured(userId,request));
+        }
+    }
+    private OrderDetailVO createMeasured(Long userId, OrderCreateDTO request) {
         validateCreate(userId, request);
-        TicketOrder existing = orders.selectByRequest(userId, request.idempotencyKey());
+        TicketOrder existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
         if (existing != null) { return repeat(existing, request); }
-        var rule = eventClient.getPurchaseRule(request.ticketTierId());
+        var rule = PerformanceSpan.measure("event.http",()->eventClient.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
         if (now.isBefore(rule.saleStartTime()) || !now.isBefore(rule.saleEndTime())) {
             throw new IllegalArgumentException("当前不在开售时间内");
@@ -91,15 +97,16 @@ public class OrderServiceImpl implements OrderService {
         }
         TicketOrder order;
         try {
-            order = transactions.create(userId, request, rule, amount, now,
-                    now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS));
+            order = PerformanceSpan.measure("local.transaction",()->transactions.create(userId, request, rule, amount, now,
+                    now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS)));
         } catch (DuplicateKeyException exception) {
-            existing = orders.selectByRequest(userId, request.idempotencyKey());
+            existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
             if (existing == null) { throw exception; }
             return repeat(existing, request);
         }
-        workflow.advance(order.getId());
-        return detail(orders.selectById(order.getId()));
+        Long orderId=order.getId();
+        PerformanceSpan.measure("inventory.workflow",()->{workflow.advance(orderId);return null;});
+        return PerformanceSpan.measure("detail.query",()->detail(orders.selectById(orderId)));
     }
 
     /** 归属查询：不存在和不属于当前用户都返回 404，不泄漏其他用户订单。 */
@@ -203,7 +210,7 @@ public class OrderServiceImpl implements OrderService {
                 || request.quantity() == null || request.quantity() < 1) {
             throw new IllegalArgumentException("票档ID和购买数量必须大于零");
         }
-        var rule = eventClient.getPurchaseRule(request.ticketTierId());
+        var rule = PerformanceSpan.measure("event.http",()->eventClient.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock);
         // 开售时间包含起点，停售时间不包含终点：[saleStartTime, saleEndTime)。
         if (now.isBefore(rule.saleStartTime())) {

@@ -127,13 +127,19 @@ public class OrderAuthVerification extends AuthVerification {
                 .redirectError(directory.resolve(module+"-"+port+".err.log").toFile()).start();children.add(process);
         String ping=module.contains("inventory")?"/internal/stocks/3":module.contains("payment")?"/api/payments/ping":module.contains("event")?"/api/events/ping":"/api/orders/ping";
         int expected=module.contains("inventory")?404:200;
-        for(int i=0;i<160;i++){if(!process.isAlive())throw new IllegalStateException(module+" exited; inspect isolated logs");try{if(call(port,"GET",ping,null,null).statusCode()==expected)return;}catch(Exception ignored){}Thread.sleep(200);}
+        for(int i=0;i<160;i++){if(!process.isAlive())throw new IllegalStateException(module+" exited; inspect isolated logs");try{if(headers(port,"GET",ping,null,module.contains("inventory")?Map.of("X-Order-Inventory-Credential",outboundCredential("INVENTORY")):Map.of()).statusCode()==expected)return;}catch(Exception ignored){}Thread.sleep(200);}
         throw new IllegalStateException(module+" startup timed out; inspect isolated logs");
     }
     HttpResponse<String> headers(int port,String method,String path,Object body,Map<String,String>headers)throws Exception{
         var builder=HttpRequest.newBuilder(URI.create("http://127.0.0.1:"+port+path)).timeout(Duration.ofSeconds(15));headers.forEach(builder::header);
         if(body!=null)builder.header("Content-Type","application/json");
         return HTTP.send(builder.method(method,body==null?HttpRequest.BodyPublishers.noBody():HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))).build(),HttpResponse.BodyHandlers.ofString());
+    }
+    /** 测试显式携带服务凭证；匿名和用户Token测试仍调用原始call/headers。 */
+    String outboundCredential(String service)throws Exception{
+        String token=System.getenv("ORDER_"+service+"_SERVICE_TOKEN");if(token!=null&&!token.isBlank())return token;
+        String path=System.getenv("ORDER_"+service+"_CREDENTIAL_PATH");
+        return Files.readString(path==null||path.isBlank()?root.resolve(".local/service-credentials/order-"+service.toLowerCase(java.util.Locale.ROOT)+".token"):Path.of(path)).strip();
     }
     int freePort()throws Exception{try(var socket=new java.net.ServerSocket(0)){return socket.getLocalPort();}}
     @Override

@@ -111,7 +111,8 @@ public class InventoryClientVerification {
             InventoryClient missing = new InventoryClient(
                     context.getBean("inventoryRestClientBuilder", RestClient.Builder.class),
                     new InventoryClientProperties("missing-inventory-verification",
-                            Duration.ofSeconds(1), Duration.ofMillis(200)));
+                            Duration.ofSeconds(1), Duration.ofMillis(200)),
+                    context.getBean(com.byy.ticket.security.service.OrderInventoryCredential.class));
             expectReason(() -> missing.reserve(request()), InventoryServiceCallException.Reason.UNAVAILABLE,
                     "missing discovery instance");
             a.stop(0);

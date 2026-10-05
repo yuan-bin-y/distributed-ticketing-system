@@ -53,7 +53,7 @@ public class EventAdministrationVerification extends OrderAuthVerification {
         var created=call(eventPort,"POST","/api/admin/events",draft,adminToken);status(created,200);var data=data(created);long id=data.path("eventId").asLong();long tier=tier(data),session=session(data);
         check(data.path("status").asText().equals("DRAFT"),"new event saved as draft");
         status(call(eventPort,"GET","/api/events/"+id,null,null),404);
-        status(call(eventPort,"GET","/internal/ticket-tiers/"+tier+"/purchase-rule",null,null),404);
+        status(headers(eventPort,"GET","/internal/ticket-tiers/"+tier+"/purchase-rule",null,Map.of("X-Order-Event-Credential",outboundCredential("EVENT"))),404);
         status(call(eventPort,"POST","/api/admin/events/"+id+"/publish",Map.of(),adminToken),409);
         var again=call(eventPort,"POST","/api/admin/events",draft,adminToken);status(again,200);check(data(again).path("eventId").asLong()==id,"create retry preserves identifiers");
         var changed=new HashMap<>(draft);changed.put("name","changed");status(call(eventPort,"POST","/api/admin/events",changed,adminToken),409);
@@ -71,7 +71,8 @@ public class EventAdministrationVerification extends OrderAuthVerification {
         status(call(eventPort,"POST","/api/admin/events/"+id+"/publish",Map.of(),adminToken),200);
         status(call(eventPort,"POST","/api/admin/events/"+id+"/publish",Map.of(),adminToken),200);
         status(call(eventPort,"GET","/api/events/"+id,null,null),200);
-        status(call(eventPort,"GET","/internal/ticket-tiers/"+tier+"/purchase-rule",null,null),200);
+        status(headers(eventPort,"GET","/internal/ticket-tiers/"+tier+"/purchase-rule",null,Map.of("X-Order-Event-Credential",outboundCredential("EVENT"))),200);
+        verifyServiceIdentities(tier,adminToken,userToken);
         mode.set("BAD_FACT");var wrong=createDraft("bad_fact",adminToken);long wrongId=wrong.path("eventId").asLong();
         await(()->preparation(wrongId,adminToken).equals("REVIEW_REQUIRED"),"mismatched success fact stops publication");
         status(call(eventPort,"POST","/api/admin/events/"+wrongId+"/publish",Map.of(),adminToken),409);
@@ -151,6 +152,35 @@ public class EventAdministrationVerification extends OrderAuthVerification {
     long tier(JsonNode data){return data.path("sessions").get(0).path("ticketTiers").get(0).path("ticketTierId").asLong();}
     long session(JsonNode data){return data.path("sessions").get(0).path("sessionId").asLong();}
     String preparation(long id,String token)throws Exception{return data(call(eventPort,"GET","/api/admin/events/"+id,null,token)).path("sessions").get(0).path("ticketTiers").get(0).path("preparationStatus").asText();}
+    /** 验证身份隔离、路径和HTTP方法限制；被拒绝的写请求不能改变库存。 */
+    void verifyServiceIdentities(long tier,String adminToken,String userToken)throws Exception{
+        String rule="/internal/ticket-tiers/"+tier+"/purchase-rule";
+        String stock="/internal/stocks/"+tier;
+        var eventHeaders=Map.of("X-Order-Event-Credential",outboundCredential("EVENT"));
+        var inventoryHeaders=Map.of("X-Order-Inventory-Credential",outboundCredential("INVENTORY"));
+        status(call(eventPort,"GET",rule,null,null),401);
+        status(call(eventPort,"GET",rule,null,adminToken),401);
+        status(call(eventPort,"GET",rule,null,userToken),401);
+        status(headers(eventPort,"GET",rule,null,Map.of("X-Order-Event-Credential",outboundCredential("INVENTORY"))),401);
+        status(headers(eventPort,"GET",rule,null,Map.of("X-Order-Event-Credential","wrong")),401);
+        status(headers(eventPort,"POST",rule,Map.of(),eventHeaders),403);
+        status(headers(eventPort,"GET","/internal/unlisted",null,eventHeaders),403);
+        status(headers(eventPort,"GET",rule,null,eventHeaders),200);
+        long available=number("SELECT available_quantity FROM "+inventorySchema+".t_ticket_stock WHERE ticket_tier_id="+tier);
+        for(String path:List.of("/internal/stock-reservations","/internal/stock-reservations/no/confirm","/internal/stock-reservations/no/release")){
+            status(call(inventoryPort,"POST",path,Map.of(),null),401);
+            status(call(inventoryPort,"POST",path,Map.of(),adminToken),401);
+            status(headers(inventoryPort,"POST",path,Map.of(),Map.of("X-Event-Inventory-Credential",initCredential)),401);
+        }
+        status(call(inventoryPort,"GET",stock,null,userToken),401);
+        status(headers(inventoryPort,"GET",stock,null,Map.of("X-Order-Inventory-Credential",outboundCredential("EVENT"))),401);
+        status(headers(inventoryPort,"GET",stock,null,inventoryHeaders),200);
+        status(headers(inventoryPort,"POST",stock,Map.of(),inventoryHeaders),403);
+        status(headers(inventoryPort,"GET","/internal/unlisted",null,inventoryHeaders),403);
+        status(headers(inventoryPort,"POST","/internal/stocks/initializations",Map.of(),inventoryHeaders),401);
+        status(headers(inventoryPort,"GET","/internal/stocks/initializations/"+tier,null,Map.of("X-Event-Inventory-Credential",initCredential)),200);
+        check(number("SELECT available_quantity FROM "+inventorySchema+".t_ticket_stock WHERE ticket_tier_id="+tier)==available,"denied writes preserve stock");
+    }
     HttpResponse<String> init(Object body)throws Exception{return headers(inventoryPort,"POST","/internal/stocks/initializations",body,Map.of("X-Event-Inventory-Credential",initCredential));}
     void execute(String sql)throws Exception{try(var statement=admin.createStatement()){statement.execute(sql);}}
     long number(String sql)throws Exception{try(var statement=admin.createStatement();var result=statement.executeQuery(sql)){return result.next()?result.getLong(1):0;}}

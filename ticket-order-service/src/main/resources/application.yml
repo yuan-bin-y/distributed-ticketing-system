@@ -29,6 +29,12 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  event-service-auth:
+    order-event-token: ${ORDER_EVENT_SERVICE_TOKEN:}
+    credential-path: ${ORDER_EVENT_CREDENTIAL_PATH:.local/service-credentials/order-event.token}
+  inventory-service-auth:
+    order-inventory-token: ${ORDER_INVENTORY_SERVICE_TOKEN:}
+    credential-path: ${ORDER_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/order-inventory.token}
   payment-service-auth:
     order-payment-token: ${ORDER_PAYMENT_SERVICE_TOKEN:}
     credential-path: ${ORDER_PAYMENT_CREDENTIAL_PATH:.local/service-credentials/order-payment.token}

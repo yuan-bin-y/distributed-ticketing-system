@@ -4,7 +4,7 @@
 
 ticket-payment-service 默认端口8064，独立连接ticket_payment。提供创建支付单、模拟付款成功、支付结果查询、全额模拟冲正；订单已通过PaymentClient接入创建支付单，见 [订单发起支付](order-payment-create.md)。支付服务已经可靠发送成功通知，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后续确认库存或恢复冲正见 [成交与冲正恢复](payment-fulfillment.md)。
 
-当前支付单可用于独立演示，不代表完整付款购票流程已经可用。正常付款依据保存后进入库存确认；关闭竞争根据原库存终态成交或全额模拟冲正，矛盾事实进入 REVIEW_REQUIRED。订单模拟支付交易链路已接通，成交后电子票生成与查询见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入，见 [支付身份接入](payment-auth.md)。真实支付渠道、MQ 和 Outbox 尚未实现。
+第一版模拟付款购票流程已完成。正常付款依据保存后进入库存确认；关闭竞争根据原库存终态成交或全额模拟冲正，矛盾事实进入 REVIEW_REQUIRED。成交后电子票生成与查询见 [电子票生成与查询](ticket-issuance.md)。真实认证已接入，见 [支付身份接入](payment-auth.md)。真实支付渠道、MQ 和 Outbox 尚未实现。
 
 ## 启动
 
@@ -44,11 +44,11 @@ $env:PAYMENT_SIMULATION_ENABLED = 'true'
 - user_id、amount、expires_at 来自订单调用方的快照；金额固定人民币，DECIMAL(18,2)。
 - status：CREATED 或 SUCCESS。
 - paid_at 保存首次成功时间；重复成功不改写它。
-- notify_status：NONE、PENDING、DELIVERED；本阶段没有发送器，只生成 PENDING。
+- notify_status：NONE、PENDING、DELIVERED；后台发送器可靠通知Order，失败后继续恢复。
 - next_notify_at、notify_attempt_count、last_notify_error 保存通知退避与错误；V2增加通知租约，支持多实例领取及宕机恢复。
 - created_at、updated_at 由数据库维护。
 
-SUCCESS 与 paid_at、PENDING、next_notify_at 在同一条 SQL、同一本地事务中写入。DELIVERED 将来仅表示接收方可靠接收结果，不等于订单已履约。
+SUCCESS 与 paid_at、PENDING、next_notify_at 在同一条 SQL、同一本地事务中写入。DELIVERED 仅表示接收方可靠接收结果，不等于订单已履约。
 
 ### t_payment_reversal
 
@@ -73,7 +73,7 @@ Flyway 另有 flyway_schema_history；本模块合计两张业务表和一张迁
 | POST /api/payments/{paymentNo}/simulate-success | 显式开启模拟后，当前用户模拟付款成功 |
 | GET /api/payments/ping | 独立启动和路由探测 |
 
-内部接口与已有库存接口一致，当前尚无服务间认证；网关只路由 /api/payments/**，不会转发 /internal/**。只允许可信内部调用方提供订单编号、用户、金额与期限；支付服务本阶段不向订单查询真实性。
+内部创建、查询和冲正接口验证Order服务凭证；网关只路由 /api/payments/**，不会转发 /internal/**。由可信订单调用方提供原订单编号、用户、金额与期限，支付服务不跨库读取订单。凭证配置见[支付身份接入](payment-auth.md)。
 
 创建正文：
 
