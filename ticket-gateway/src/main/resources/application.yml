@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: ticket-gateway
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
   cloud:
     nacos:
       discovery:
@@ -32,3 +39,16 @@ spring:
               uri: lb://ticket-payment-service
               predicates:
                 - Path=/api/payments/**
+            - id: ticket-auth-service
+              uri: lb://ticket-auth-service
+              predicates:
+                - Path=/api/auth/**
+
+ticket:
+  security:
+    issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
+    audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}
+    # 本地第一版使用Auth固定公钥地址；不是签发接口，也不读取私钥。
+    jwk-set-uri: ${AUTH_JWK_SET_URI:http://127.0.0.1:8065/.well-known/jwks.json}
+    jwk-timeout: 3s
+    redis-prefix: "ticket:auth:"

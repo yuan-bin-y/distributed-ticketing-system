@@ -20,6 +20,7 @@
     <!-- 聚合公共基础模块与各个独立启动的服务。 -->
     <modules>
         <module>ticket-common</module>
+        <module>ticket-security</module>
         <module>ticket-auth-service</module>
         <module>ticket-gateway</module>
         <module>ticket-event-service</module>
@@ -39,6 +40,11 @@
     <!-- 导入版本清单；子模块仍须在自己的 dependencies 中引入所需组件。 -->
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>com.byy</groupId>
+                <artifactId>ticket-security</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.byy</groupId>
                 <artifactId>ticket-common</artifactId>

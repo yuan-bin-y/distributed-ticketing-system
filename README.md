@@ -2,17 +2,21 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务、支付服务和Auth服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth已完成注册登录与会话管理，网关及业务服务身份接入、累计限购、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)、[Auth服务](docs/auth-service.md)。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、`ticket-security`、网关、活动服务、订单服务、库存服务、支付服务和Auth服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth已完成注册登录与会话管理，业务服务身份接入、累计限购、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)、[Auth服务](docs/auth-service.md)。
 
 ## Auth 服务当前阶段
 
-新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth自身已实现，网关、订单、支付的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
+新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth自身及网关准入已实现，订单、支付的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
+
+## 网关身份准入
+
+网关已增加Auth路由、JWT公钥验签、声明校验和响应式Redis会话检查，使用新增 `ticket-security` 公共库。活动GET、注册登录刷新可匿名；其他请求必须携带有效Access Token。退出后失效，Redis故障拒绝放行。外部X-Dev-User-Id/X-User-Id不再向下游转发。订单、支付自己的Token身份接入及内部服务身份仍待下一步，因此现在不能依靠网关认证直接完成真实用户下单。44项隔离验证通过，阅读顺序、配置和边界见 [网关认证](docs/gateway-auth.md)。
 
 ## 订单下单与恢复
 
 正式入口为 `POST /api/orders` 和 `GET /api/orders/{orderNo}`。创建请求为 `ticketTierId`、`quantity`、`idempotencyKey`。订单服务先校验活动规则，在本地事务中保存主表和购买快照，再在事务外调用库存；不确定结果保留 `STOCK_PENDING`，后台沿用原参数核对。预留成功进入待支付；未支付到期订单先进入 `CLOSING`，确认释放后 `CLOSED`。库存已售出等异常终态进入 `REVIEW_REQUIRED`，不自动释放。
 
-Auth 尚未接入，新入口默认需要可信身份。仅本地学习可设置 `ORDER_DEV_IDENTITY_ENABLED=true`，重新启动后在请求中传 `X-Dev-User-Id: 1`。用户身份不放入下单 JSON。开发身份不是生产认证。完整请求、状态解释、事务边界、租约与重试配置见 [订单创建与恢复](docs/order-workflow.md)。
+订单服务尚未接入Token，新入口默认需要可信身份。仅直连订单服务的本地学习可设置 `ORDER_DEV_IDENTITY_ENABLED=true`，重新启动后在请求中传 `X-Dev-User-Id: 1`。用户身份不放入下单 JSON。开发身份不是生产认证。完整请求、状态解释、事务边界、租约与重试配置见 [订单创建与恢复](docs/order-workflow.md)。
 
 本阶段的故障验证脚本为 `deploy/verify/verify_order_workflow.ps1`：使用真实 MySQL、独立订单/库存进程、活动 HTTP 桩和库存响应故障代理，验证幂等、并发、事务回滚、响应丢失、服务重启和到期释放。测试只使用随机测试库，结束后清理自身库和进程。
 

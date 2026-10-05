@@ -12,6 +12,11 @@
     <artifactId>ticket-gateway</artifactId>
 
     <dependencies>
+        <dependency><groupId>com.byy</groupId><artifactId>ticket-common</artifactId></dependency>
+        <dependency><groupId>com.byy</groupId><artifactId>ticket-security</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-security-oauth2-resource-server</artifactId></dependency>
+        <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-data-redis-reactive</artifactId></dependency>
         <!-- 版本由父工程的 Spring Cloud BOM 管理。 -->
         <dependency>
             <groupId>org.springframework.cloud</groupId>
