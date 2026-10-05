@@ -128,7 +128,7 @@ public class AuthVerification {
         status(call(down,"POST","/api/auth/logout",Map.of(),healthy.path("accessToken").asText()),503);
         check(first.getBean(JwtDecoder.class).decode(healthy.path("accessToken").asText())!=null,"failed logout did not report success");
         try(var statement=admin.createStatement();var result=statement.executeQuery("SELECT COUNT(*) FROM "+schema+".flyway_schema_history WHERE success=1")){
-            result.next();check(result.getInt(1)==1,"Flyway migration applied once");
+            result.next();check(result.getInt(1)==2,"Flyway user and role migrations applied once");
         }
     }
     /** 两实例使用相同密钥及Redis前缀；关闭Nacos，仅验证认证业务。 */

@@ -22,6 +22,17 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    /** 幂等参数、库存准备或发布条件冲突，不返回假发布成功。 */
+    @ExceptionHandler(com.byy.ticket.event.exception.EventConflictException.class)
+    @ResponseStatus(HttpStatus.CONFLICT)
+    public Result<Void> handleConflict(RuntimeException exception){return Result.failure(ApiErrorCode.CONFLICT,exception.getMessage());}
+    /** 暂时性数据库锁竞争，管理员沿用原幂等键重试。 */
+    @ExceptionHandler(org.springframework.dao.TransientDataAccessException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleStorageBusy(RuntimeException exception){return Result.failure(ApiErrorCode.SERVICE_BUSY,"活动暂时处理中，请保持原参数重试");}
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    public Result<Void> handleJson(RuntimeException exception){return Result.failure(ApiErrorCode.BAD_REQUEST,"请求正文格式不正确");}
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /**

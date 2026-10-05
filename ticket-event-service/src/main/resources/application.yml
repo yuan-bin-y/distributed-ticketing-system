@@ -2,6 +2,13 @@ server:
   port: ${EVENT_PORT:8061}
 
 spring:
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
   application:
     name: ticket-event-service
   datasource:
@@ -17,3 +24,20 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+
+ticket:
+  security:
+    issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
+    audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}
+    jwk-set-uri: ${AUTH_JWK_SET_URI:http://127.0.0.1:8065/.well-known/jwks.json}
+    jwk-timeout: 3s
+    redis-prefix: "ticket:auth:"
+  inventory-init-auth:
+    token: ${EVENT_INVENTORY_SERVICE_TOKEN:}
+    credential-path: ${EVENT_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/event-inventory.token}
+  event-preparation:
+    enabled: true
+    fixed-delay: 2000
+    service-id: ticket-inventory-service
+    connect-timeout: 2s
+    read-timeout: 3s

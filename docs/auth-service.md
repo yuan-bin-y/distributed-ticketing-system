@@ -2,9 +2,9 @@
 
 ## 当前完成范围
 
-`ticket-auth-service` 独立运行，默认端口8065，通过Nacos注册；只访问自己的 `ticket_auth` 数据库。首次启动 JDBC 创建数据库，Flyway V1 建立 `t_user`。
+`ticket-auth-service` 独立运行，默认端口8065，通过Nacos注册；只访问自己的 `ticket_auth` 数据库。首次启动 JDBC 创建数据库，Flyway V1 建立 `t_user`，V2增加USER/ADMIN角色。
 
-已完成注册、登录、刷新、当前会话退出，RSA签名及公钥文档。网关已完成Auth路由及Token/会话校验，可通过8060访问这些认证接口，见 [网关认证](gateway-auth.md)。订单Token接入及Payment通知Order的服务身份已完成；支付公共用户接口及Order调用Payment的内部凭证也已完成，见 [支付身份接入](payment-auth.md)。Event/Inventory内部保护仍属后续阶段。
+已完成注册、登录、刷新、当前会话退出，RSA签名及公钥文档。网关已完成Auth路由及Token/会话校验，可通过8060访问这些认证接口，见 [网关认证](gateway-auth.md)。订单Token接入及Payment通知Order的服务身份已完成；支付公共用户接口及Order调用Payment的内部凭证也已完成，见 [支付身份接入](payment-auth.md)。Event管理员入口和Inventory初始化服务凭证已接入，见 [活动管理](event-administration.md)；其余原内部业务入口保护仍属后续阶段。
 
 本服务是项目自己的账号认证接口，不是完整OAuth2/OIDC授权服务器。
 
@@ -33,6 +33,7 @@ Redis可配置 `LOCAL_REDIS_HOST`、`LOCAL_REDIS_PORT`、`LOCAL_REDIS_PASSWORD`�
 | username | 3至32位字母数字下划线，统一小写，唯一索引防止并发重复注册 |
 | password_hash | BCrypt摘要，接口响应不返回 |
 | nickname | 不超过64字符且不能为空 |
+| role | 公共注册固定USER；管理员通过可选首次初始化创建，角色由Auth签入Token |
 | status | ACTIVE/DISABLED |
 | created_at/updated_at | 创建、更新时间 |
 

@@ -1,0 +1,3 @@
+ALTER TABLE t_user ADD COLUMN role VARCHAR(16) NOT NULL DEFAULT 'USER'
+    COMMENT 'USER普通用户，ADMIN管理员',
+    ADD CONSTRAINT chk_user_role CHECK (role IN ('USER','ADMIN'));

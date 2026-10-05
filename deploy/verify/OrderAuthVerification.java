@@ -125,7 +125,7 @@ public class OrderAuthVerification extends AuthVerification {
                 "--logging.level.root=ERROR"));arguments.addAll(extra);
         var process=new ProcessBuilder(arguments).directory(root.toFile()).redirectOutput(directory.resolve(module+"-"+port+".out.log").toFile())
                 .redirectError(directory.resolve(module+"-"+port+".err.log").toFile()).start();children.add(process);
-        String ping=module.contains("inventory")?"/internal/stocks/3":module.contains("payment")?"/api/payments/ping":"/api/orders/ping";
+        String ping=module.contains("inventory")?"/internal/stocks/3":module.contains("payment")?"/api/payments/ping":module.contains("event")?"/api/events/ping":"/api/orders/ping";
         int expected=module.contains("inventory")?404:200;
         for(int i=0;i<160;i++){if(!process.isAlive())throw new IllegalStateException(module+" exited; inspect isolated logs");try{if(call(port,"GET",ping,null,null).statusCode()==expected)return;}catch(Exception ignored){}Thread.sleep(200);}
         throw new IllegalStateException(module+" startup timed out; inspect isolated logs");
@@ -141,7 +141,7 @@ public class OrderAuthVerification extends AuthVerification {
         for(var process:children){process.destroy();if(!process.waitFor(5,TimeUnit.SECONDS))process.destroyForcibly();}
         if(event!=null)event.stop(0);
         eventWorkers.shutdownNow();
-        try{if(admin!=null)try(var sql=admin.createStatement()){for(String database:schemas)if(database.matches("ticket_(order|stock|payment)_auth_verify_[0-9a-f]{32}"))sql.execute("DROP DATABASE "+database);}}
+        try{if(admin!=null)try(var sql=admin.createStatement()){for(String database:schemas)if(database.matches("ticket_(order|stock|payment|event)_auth_verify_[0-9a-f]{32}"))sql.execute("DROP DATABASE "+database);}}
         finally{super.cleanup();}
     }
 }

@@ -26,7 +26,7 @@ spring:
               # 按服务名发现实例，再由 LoadBalancer 选择转发目标。
               uri: lb://ticket-event-service
               predicates:
-                - Path=/api/events/**
+                - Path=/api/events/**,/api/admin/events/**
             - id: ticket-order-service
               uri: lb://ticket-order-service
               predicates:

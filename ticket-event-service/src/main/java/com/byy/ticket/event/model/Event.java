@@ -43,6 +43,9 @@ public class Event {
      * 发布状态，活动查询只对外展示 PUBLISHED 的记录。
      */
     private String status;
+    /** 管理端创建幂等键与完整请求摘要，重试不生成另一组票档ID。 */
+    private String creationKey;
+    private String creationHash;
     /**
      * 记录创建时间，由数据库默认值写入。
      */

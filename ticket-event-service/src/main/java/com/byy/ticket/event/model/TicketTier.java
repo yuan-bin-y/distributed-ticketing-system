@@ -41,6 +41,15 @@ public class TicketTier {
      * 票档是否启用，1 表示启用。
      */
     private Integer enabled;
+    /** 初始化请求快照，仅用于跨服务核对，实时库存仍只属于Inventory。 */
+    private Integer plannedQuantity;
+    /** LEGACY历史未核对、PENDING待准备、READY已确认、REVIEW_REQUIRED需核对。 */
+    private String preparationStatus;
+    private Integer preparationAttempts;
+    private LocalDateTime preparationNextAt;
+    private String preparationToken;
+    private LocalDateTime preparationLeaseUntil;
+    private String preparationError;
     /**
      * 记录创建时间，由数据库默认值写入。
      */

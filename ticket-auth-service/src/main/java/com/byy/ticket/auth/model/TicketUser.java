@@ -11,6 +11,7 @@ public class TicketUser {
     private String passwordHash;
     private String nickname;
     private String status;
+    private String role;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -23,6 +24,8 @@ public class TicketUser {
     public String getNickname() { return nickname; }
     public void setNickname(String nickname) { this.nickname = nickname; }
     public String getStatus() { return status; }
+    public String getRole() { return role; }
+    public void setRole(String role) { this.role = role; }
     public void setStatus(String status) { this.status = status; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }

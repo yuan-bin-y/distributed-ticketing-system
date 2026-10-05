@@ -10,4 +10,9 @@ import org.apache.ibatis.annotations.Mapper;
  */
 @Mapper
 public interface EventMapper extends BaseMapper<Event> {
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_event WHERE creation_key=#{key}")
+    Event selectByCreationKey(String key);
+    /** 发布及管理操作统一先锁活动行，防止同一个草稿并发发布。 */
+    @org.apache.ibatis.annotations.Select("SELECT * FROM t_event WHERE id=#{id} FOR UPDATE")
+    Event selectForUpdate(Long id);
 }

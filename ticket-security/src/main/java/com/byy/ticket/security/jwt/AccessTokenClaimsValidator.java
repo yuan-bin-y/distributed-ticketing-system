@@ -24,6 +24,7 @@ public final class AccessTokenClaimsValidator implements OAuth2TokenValidator<Jw
                     && jwt.getExpiresAt().isAfter(jwt.getIssuedAt()) && positiveUserId(jwt.getSubject())
                     && uuid(jwt.getId()) && uuid(jwt.getClaimAsString("sid"))
                     && "access".equals(jwt.getClaimAsString("tokenType"))
+                    && (jwt.getClaim("role") == null || "USER".equals(jwt.getClaim("role")) || "ADMIN".equals(jwt.getClaim("role")))
                     && jwt.getAudience() != null && jwt.getAudience().contains(properties.audience());
         } catch (RuntimeException exception) { valid = false; }
         return valid ? OAuth2TokenValidatorResult.success() : OAuth2TokenValidatorResult.failure(

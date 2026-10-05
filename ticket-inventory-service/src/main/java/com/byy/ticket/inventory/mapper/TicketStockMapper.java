@@ -12,6 +12,13 @@ import org.apache.ibatis.annotations.Update;
  */
 @Mapper
 public interface TicketStockMapper extends BaseMapper<TicketStock> {
+    /** 唯一票档ID串行化重复初始化；已有记录完全保留，不重置预留、售出、可用量。 */
+    @org.apache.ibatis.annotations.Insert("""
+            INSERT INTO t_ticket_stock(ticket_tier_id,session_id,total_quantity,available_quantity)
+            VALUES(#{ticketTierId},#{sessionId},#{quantity},#{quantity})
+            ON DUPLICATE KEY UPDATE ticket_tier_id=ticket_tier_id
+            """)
+    int initialize(@Param("ticketTierId") Long ticketTierId,@Param("sessionId") Long sessionId,@Param("quantity") Integer quantity);
     /**
      * 可用量足够且场次匹配时，可用量减 quantity、预留量加 quantity。
      * 返回影响行数：1 表示成功，0 表示条件不满足；Service 再区分库存不存在、场次不匹配或数量不足。

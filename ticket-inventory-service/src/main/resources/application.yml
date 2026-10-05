@@ -17,3 +17,8 @@ spring:
     nacos:
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+
+ticket:
+  inventory-init-auth:
+    token: ${EVENT_INVENTORY_SERVICE_TOKEN:}
+    credential-path: ${EVENT_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/event-inventory.token}

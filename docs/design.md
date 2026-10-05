@@ -8,6 +8,8 @@
 
 当前已接入：Order新增 `POST /api/orders/{orderNo}/payments` 和独立PaymentClient，使用订单已保存的用户、金额、期限创建支付单。入口检查用户归属、待支付状态和未到期，HTTP调用不持有订单数据库事务，响应核对支付单与快照匹配，返回前再次检查本地状态与期限；网络失败不改订单、不自行重复写请求，客户端在期限内以原订单编号重试。验证及阅读顺序见 [订单发起支付](order-payment-create.md)。支付成功通知与依据保存已接入；库存确认与关闭竞争的冲正恢复已经接入，见 [成交与冲正恢复](payment-fulfillment.md)。
 
+管理员草稿创建、库存初始化、准备恢复和发布入口已接入，见 [活动管理与库存准备](event-administration.md)。草稿三张表本地原子保存，全部售卖票档READY才允许发布；响应丢失及本地结果保存失败沿用原参数核对恢复。Auth新增ADMIN角色、Gateway与Event独立授权；库存初始化入口使用独立Event服务凭证。
+
 ## 1. 目标与范围
 
 面向演唱会、体育赛事等活动，实现按**场次 + 票档**购买的最小交易闭环：
@@ -114,7 +116,7 @@ Auth模块已完成用户表、注册登录、RSA签发、Redis会话、刷新�
 - 内部接口为 `POST /internal/stock-reservations`、`POST /internal/stock-reservations/{reservationId}/confirm`、`POST /internal/stock-reservations/{reservationId}/release`，另提供预留和库存的内部查询。网关不添加库存内部路由，服务身份认证按后续认证阶段实现。
 - 预留先通过唯一键插入或锁定预留记录，再用 `available_quantity >= quantity` 的条件更新扣可用量、加预留量；库存不存在、场次不匹配或不足时整笔事务回滚。重复键不会覆盖原请求参数。
 - 确认和释放先锁定同一预留记录，再按 `RESERVED` 前置状态修改记录和库存；同方向重复操作直接返回结果，互相冲突的终态操作返回 409。各命令采用本地事务，所有路径遵守先预留记录、后库存记录的锁顺序。锁竞争失败返回可重试的 503，不能当作成功。
-- 当前仅实现数据库库存命令。库存由本地演示 SQL 手动初始化；不自动读取活动库，不接 Redis/MQ，不创建订单。到期时间用于后续核对任务，本阶段不会仅凭到期时间自动释放库存。
+- 当前仅实现数据库库存命令。库存现可通过Event管理流程幂等初始化，演示SQL仍可用于旧教学数据；不自动读取活动库，不接 Redis/MQ，不创建订单。到期时间用于后续核对任务，本阶段不会仅凭到期时间自动释放库存。
 
 重复请求串行化使用 MySQL `INSERT ... ON DUPLICATE KEY UPDATE` 配合锁定读取，见 [MySQL 8.0 锁说明](https://dev.mysql.com/doc/refman/8.0/en/innodb-locks-set.html)。预留表不对库存建立外键，避免插入预留时的父记录共享锁与库存更新产生锁升级竞争；关联存在性由同一事务的库存更新验证。
 

@@ -45,6 +45,7 @@ public class AuthServiceImpl implements AuthService {
         TicketUser user = new TicketUser();
         user.setUsername(normalize(request.username())); user.setPasswordHash(passwords.encode(request.password()));
         user.setNickname(request.nickname().strip()); user.setStatus("ACTIVE");
+        user.setRole("USER"); // 公共注册永远不能自行选择管理员角色。
         if (user.getNickname().isBlank()) { throw new IllegalArgumentException("昵称不能为空"); }
         try { users.insert(user); }
         catch (DuplicateKeyException exception) { throw new AuthException(409, ApiErrorCode.CONFLICT, "账号已存在"); }
@@ -58,7 +59,7 @@ public class AuthServiceImpl implements AuthService {
         boolean matches = passwords.matches(request.password(), user == null ? dummyHash : user.getPasswordHash());
         if (user == null || !matches || !"ACTIVE".equals(user.getStatus())) { throw AuthException.unauthorized(); }
         String sid = UUID.randomUUID().toString();
-        TokenService.IssuedTokens issued = tokens.issue(user.getId(), sid);
+        TokenService.IssuedTokens issued = tokens.issue(user.getId(), sid, user.getRole());
         sessions.create(user.getId().toString(), sid, issued.refreshJti(), properties.refreshTtl());
         return issued.tokens();
     }
@@ -74,7 +75,7 @@ public class AuthServiceImpl implements AuthService {
         TicketUser user = users.selectById(userId);
         if (user == null || !"ACTIVE".equals(user.getStatus())) { throw AuthException.unauthorized(); }
         String sid = jwt.getClaimAsString("sid");
-        TokenService.IssuedTokens issued = tokens.issue(userId, sid);
+        TokenService.IssuedTokens issued = tokens.issue(userId, sid, user.getRole());
         if (!sessions.rotate(userId.toString(), sid, jwt.getId(), issued.refreshJti(), properties.refreshTtl())) {
             throw AuthException.unauthorized();
         }

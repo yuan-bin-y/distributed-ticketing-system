@@ -24,13 +24,16 @@ public class GatewaySecurityConfig {
                 .securityContextRepository(NoOpServerSecurityContextRepository.getInstance())
                 .requestCache(cache -> cache.requestCache(NoOpServerRequestCache.getInstance()))
                 .authorizeExchange(auth -> auth.pathMatchers("/internal/**").denyAll()
+                        .pathMatchers("/api/admin/**").hasRole("ADMIN")
                         .pathMatchers(HttpMethod.POST,"/api/auth/register","/api/auth/login","/api/auth/refresh").permitAll()
                         .pathMatchers(HttpMethod.GET,"/api/events/**","/api/auth/ping").permitAll()
                         .anyExchange().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((exchange, exception) -> responses.write(exchange,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED","请登录或更新登录凭证"))
                         .accessDeniedHandler((exchange, exception) -> responses.write(exchange,HttpStatus.FORBIDDEN,"UNAUTHORIZED","无权访问")))
-                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtDecoder(accessTokenDecoder))
+                .oauth2ResourceServer(oauth -> oauth.jwt(jwt -> jwt.jwtDecoder(accessTokenDecoder)
+                        .jwtAuthenticationConverter(new org.springframework.security.oauth2.server.resource.authentication.ReactiveJwtAuthenticationConverterAdapter(
+                                com.byy.ticket.security.jwt.UserRoleAuthorities.converter())))
                         .authenticationEntryPoint((exchange, exception) -> responses.write(exchange,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED","请登录或更新登录凭证")))
                 .build();
     }
