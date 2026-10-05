@@ -20,6 +20,7 @@
     <!-- 聚合公共基础模块与各个独立启动的服务。 -->
     <modules>
         <module>ticket-common</module>
+        <module>ticket-auth-service</module>
         <module>ticket-gateway</module>
         <module>ticket-event-service</module>
         <module>ticket-order-service</module>

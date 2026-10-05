@@ -1,0 +1,12 @@
+CREATE TABLE t_user (
+    id BIGINT NOT NULL AUTO_INCREMENT,
+    username VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    password_hash VARCHAR(100) NOT NULL,
+    nickname VARCHAR(64) NOT NULL,
+    status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    PRIMARY KEY (id),
+    UNIQUE KEY uk_user_username (username),
+    CONSTRAINT chk_user_status CHECK (status IN ('ACTIVE', 'DISABLED'))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='认证服务用户；其他服务只保存用户ID，不跨库建立外键';

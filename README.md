@@ -2,7 +2,11 @@
 
 基于 Spring Cloud 的学习项目。第一版聚焦按票档抢票，验证微服务边界、高并发库存控制和跨服务交易一致性。
 
-项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务和支付服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth、累计限购、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)。
+项目设计与实施顺序见 [设计文档](docs/design.md)。当前包含 `ticket-common`、网关、活动服务、订单服务、库存服务、支付服务和Auth服务。活动提供查询与购票规则；订单提供落库、购买幂等、查询、库存预留与后台恢复、未支付到期释放，并通过PaymentClient创建支付单；库存提供预留、确认售出与释放；支付提供支付单、模拟成功、查询及全额冲正。支付可靠通知订单，订单回查并保存付款依据，正常进入 PAYMENT_CONFIRMING，后台确认库存后成交为 PAID；库存已释放则恢复全额模拟冲正，最终 REVERSED。订单成交后本地事务生成每张电子票并进入 COMPLETED，提供本人电子票查询。Auth已完成注册登录与会话管理，网关及业务服务身份接入、累计限购、验票、Outbox/MQ按后续步骤实现。代码阅读见 [订单创建与恢复](docs/order-workflow.md)、[支付服务](docs/payment-service.md)、[订单发起支付](docs/order-payment-create.md)、[付款通知](docs/payment-notification.md)、[成交与冲正恢复](docs/payment-fulfillment.md)、[电子票生成与查询](docs/ticket-issuance.md)、[Auth服务](docs/auth-service.md)。
+
+## Auth 服务当前阶段
+
+新增 `ticket-auth-service`，默认8065：注册、登录、Refresh凭证原子轮换、当前会话退出；MySQL/Flyway建立用户表，BCrypt保存密码摘要，RSA签发JWT，Redis管理会话。Auth自身已实现，网关、订单、支付的Token接入尚待下一步。启动前需本地Redis与持久化RSA密钥，运行类为 `com.byy.ticket.auth.TicketAuthApplication`，启动步骤及代码阅读见 [Auth服务](docs/auth-service.md)。验证脚本为 `deploy/verify/verify_auth.ps1`，只使用随机测试数据库和Redis前缀。
 
 ## 订单下单与恢复
 

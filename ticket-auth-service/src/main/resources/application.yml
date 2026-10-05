@@ -1,0 +1,33 @@
+server:
+  port: ${AUTH_PORT:8065}
+spring:
+  application:
+    name: ticket-auth-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+  datasource:
+    url: "${AUTH_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_auth?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
+    username: ${LOCAL_MYSQL_USERNAME}
+    password: ${LOCAL_MYSQL_PASSWORD}
+  flyway:
+    locations: classpath:db/migration
+    validate-on-migrate: true
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 2s
+      timeout: 2s
+ticket:
+  auth:
+    issuer: ticket-auth-service
+    audience: ticket-api
+    access-ttl: 15m
+    refresh-ttl: 7d
+    # 持久化密钥，重启服务不能重新生成；只把公钥提供给其他服务。
+    private-key-path: ${AUTH_JWT_PRIVATE_KEY_PATH:.local/auth-keys/private.pem}
+    public-key-path: ${AUTH_JWT_PUBLIC_KEY_PATH:.local/auth-keys/public.pem}
+    redis-prefix: "ticket:auth:"
