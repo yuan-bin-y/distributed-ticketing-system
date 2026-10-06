@@ -12,6 +12,8 @@ import java.util.*;
 /** 草稿三张表及准备参数属于Event本地事务；这里不发送HTTP。 */
 @Service
 public class EventDraftTransaction {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.event.cache.EventQueryCache cache;
     private final EventMapper events;private final EventSessionMapper sessions;private final TicketTierMapper tiers;
     private final PreparationMapper preparations;
     public EventDraftTransaction(EventMapper events,EventSessionMapper sessions,TicketTierMapper tiers,PreparationMapper preparations){this.events=events;this.sessions=sessions;this.tiers=tiers;this.preparations=preparations;}
@@ -52,6 +54,7 @@ public class EventDraftTransaction {
         }
         for(var session:all){session.setStatus("PUBLISHED");sessions.updateById(session);}
         event.setStatus("PUBLISHED");events.updateById(event);
+        cache.invalidateAfterCommit();
     }
     /** 管理员显式重新准备需核对票档；只改变进度，不改变原初始化快照。 */
     @Transactional public void retry(Long id){var event=require(id);if(!"DRAFT".equals(event.getStatus()))throw new EventConflictException("只有草稿可以重新准备");preparations.retryReviewed(id);}

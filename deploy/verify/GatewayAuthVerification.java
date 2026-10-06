@@ -128,7 +128,8 @@ public class GatewayAuthVerification extends AuthVerification {
                 "--spring.cloud.gateway.server.webflux.routes[0].uri=http://127.0.0.1:"+business.getAddress().getPort(),
                 "--spring.cloud.gateway.server.webflux.routes[1].uri=http://127.0.0.1:"+business.getAddress().getPort(),
                 "--spring.cloud.gateway.server.webflux.routes[2].uri=http://127.0.0.1:"+business.getAddress().getPort(),
-                "--spring.cloud.gateway.server.webflux.routes[3].uri=http://127.0.0.1:"+authPort,"--logging.level.root=ERROR"));
+                "--spring.cloud.gateway.server.webflux.routes[3].uri=http://127.0.0.1:"+authPort,"--logging.level.root=ERROR",
+                "--ticket.rate-limit.enabled=false"));
         command.addAll(List.of(extra));
         // 配置列表按整体覆盖，需要完整声明测试路由，而不是只覆盖uri。
         String[] ids={"ticket-event-service","ticket-order-service","ticket-payment-service","ticket-auth-service"};

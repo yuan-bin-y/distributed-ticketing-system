@@ -22,6 +22,9 @@ import java.util.Map;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.byy.ticket.event.cache.CacheBusyException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleCacheBusy(RuntimeException exception){return Result.failure(ApiErrorCode.SERVICE_BUSY,exception.getMessage());}
     /** 幂等参数、库存准备或发布条件冲突，不返回假发布成功。 */
     @ExceptionHandler(com.byy.ticket.event.exception.EventConflictException.class)
     @ResponseStatus(HttpStatus.CONFLICT)

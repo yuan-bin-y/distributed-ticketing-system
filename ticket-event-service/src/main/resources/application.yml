@@ -26,6 +26,13 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  event-cache:
+    enabled: ${EVENT_CACHE_ENABLED:true}
+    prefix: "${EVENT_CACHE_PREFIX:ticket:{event-cache}:}"
+    ttl-ms: 60000
+    wait-ms: 1500
+    lease-ms: 8000
+    database-concurrency: 16
   event-service-auth:
     order-event-token: ${ORDER_EVENT_SERVICE_TOKEN:}
     credential-path: ${ORDER_EVENT_CREDENTIAL_PATH:.local/service-credentials/order-event.token}

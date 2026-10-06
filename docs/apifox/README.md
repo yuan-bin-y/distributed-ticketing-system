@@ -110,6 +110,8 @@ JWKS公钥直连8065，无认证且不包装Result。Inventory预留的字段为
 
 ## 文档校验与维护
 
+第二版新增活动查询和订单接口的 `429 RATE_LIMITED` 响应说明与 `Retry-After`，并补充缓存/限流不可用时的 `503 SERVICE_BUSY`。导入更新后的公开 OpenAPI 即可同步这 8 个操作的错误契约；内部接口无需为本轮缓存和限流重新导入。具体范围和配置见[活动缓存与限流](../event-cache-rate-limit.md)。
+
 两个JSON已使用OpenAPI官方JSON Schema校验（为本机Test-Json将校验器的Draft4语法等价适配至Draft7，导入文件仍为OpenAPI 3.0.3）。35个接口与当前Controller匹配，33个DTO/VO模型字段、10个请求示例、引用及路径参数已检查；7个脚本通过本地模拟pm对象验证，涵盖Token分离、失败不覆盖、草稿准备与下单幂等请求保留。
 
 导入后仍须核对Apifox实际URL、认证继承及脚本配置；本次没有操作Apifox桌面客户端完成导入或执行新一轮真实交易。

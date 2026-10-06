@@ -1,4 +1,5 @@
 server:
+  forward-headers-strategy: none
   port: ${GATEWAY_PORT:8060}
 
 spring:
@@ -45,6 +46,17 @@ spring:
                 - Path=/api/auth/**
 
 ticket:
+  rate-limit:
+    enabled: ${GATEWAY_RATE_LIMIT_ENABLED:true}
+    prefix: "${GATEWAY_RATE_LIMIT_PREFIX:ticket:{gateway-limit}:}"
+    event-rate: 200
+    event-burst: 400
+    event-client-rate: 20
+    event-client-burst: 40
+    order-rate: 100
+    order-burst: 200
+    order-client-rate: 5
+    order-client-burst: 10
   security:
     issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
     audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}

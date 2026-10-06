@@ -139,7 +139,17 @@ public class EventAdministrationVerification extends OrderAuthVerification {
         status(call(eventPort,"GET","/api/admin/events/"+id,null,adminToken),401);status(call(gatewayPort,"GET","/api/admin/events/"+id,null,adminToken),401);
     }
     String secret(){byte[] bytes=new byte[32];new SecureRandom().nextBytes(bytes);return HexFormat.of().formatHex(bytes);}
-    @Override void launch(String module,int port,String database,List<String> extra)throws Exception{var args=new ArrayList<>(extra);args.add("--ticket.inventory-init-auth.token=");args.add("--ticket.inventory-init-auth.credential-path="+initCredentialFile);super.launch(module,port,database,args);}
+    @Override void launch(String module,int port,String database,List<String> extra)throws Exception{
+        var args=new ArrayList<>(extra);
+        if(module.contains("event")){
+            if(extra.stream().noneMatch(v->v.startsWith("--ticket.event-cache.prefix=")))
+                args.add("--ticket.event-cache.prefix=ticket:{cache_verify_"+suffix+"}:");
+            if(extra.stream().noneMatch(v->v.startsWith("--ticket.event-cache.enabled=")))
+                args.add("--ticket.event-cache.enabled=false");
+        }
+        args.add("--ticket.inventory-init-auth.token=");args.add("--ticket.inventory-init-auth.credential-path="+initCredentialFile);
+        super.launch(module,port,database,args);
+    }
     List<String> eventArguments(int authPort,boolean recover){return List.of("--ticket.security.jwk-set-uri=http://127.0.0.1:"+authPort+"/.well-known/jwks.json","--ticket.security.redis-prefix="+prefix,
             "--ticket.event-preparation.enabled="+recover,"--ticket.event-preparation.fixed-delay=100","--ticket.event-preparation.read-timeout=300ms",
             "--spring.cloud.discovery.client.simple.instances.ticket-inventory-service[0].uri=http://127.0.0.1:"+proxyPort);}
@@ -204,6 +214,8 @@ public class EventAdministrationVerification extends OrderAuthVerification {
         gatewayPort=freePort();var args=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin/java.exe").toString(),"-jar",root.resolve("ticket-gateway/target/ticket-gateway-1.0-SNAPSHOT.jar").toString(),
                 "--server.port="+gatewayPort,"--spring.cloud.nacos.discovery.enabled=false","--spring.cloud.discovery.enabled=false","--ticket.security.jwk-set-uri=http://127.0.0.1:"+authPort+"/.well-known/jwks.json","--ticket.security.redis-prefix="+prefix,"--logging.level.root=ERROR"));
         String[] names={"events","orders","payments","auth"};int[] ports={eventPort,orderPort,paymentPort,authPort};
+        // 此回归验证交易和权限；限流由专门的跨实例压测验证。
+        args.add("--ticket.rate-limit.enabled=false");
         for(int i=0;i<4;i++){String key="--spring.cloud.gateway.server.webflux.routes["+i+"]";args.add(key+".id=verify-"+names[i]);args.add(key+".uri=http://127.0.0.1:"+ports[i]);args.add(key+".predicates[0]=Path=/api/"+names[i]+"/**"+(i==0?",/api/admin/events/**":""));}
         var process=new ProcessBuilder(args).directory(root.toFile()).redirectErrorStream(true).redirectOutput(directory.resolve("gateway.log").toFile()).start();children.add(process);
         await(()->{if(!process.isAlive())throw new IllegalStateException("Gateway exited; inspect owned logs");try{return call(gatewayPort,"GET","/api/auth/ping",null,null).statusCode()==200;}catch(java.io.IOException starting){return false;}},"Gateway startup");

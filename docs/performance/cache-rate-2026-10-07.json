@@ -1,0 +1,61 @@
+[ {
+  "phase" : "uncached",
+  "requests" : 2000,
+  "concurrency" : 32,
+  "seconds" : 1.7870792,
+  "requestRps" : 1119.1445796022917,
+  "success" : 2000,
+  "limited" : 0,
+  "selects" : 1998,
+  "p50Ms" : 25.5331,
+  "p95Ms" : 53.1155,
+  "p99Ms" : 77.5286
+}, {
+  "phase" : "cold-hotspot",
+  "requests" : 64,
+  "concurrency" : 32,
+  "seconds" : 0.0932377,
+  "requestRps" : 686.417618624226,
+  "success" : 64,
+  "limited" : 0,
+  "selects" : 1,
+  "p50Ms" : 37.0378,
+  "p95Ms" : 77.0461,
+  "p99Ms" : 91.2641
+}, {
+  "phase" : "cached",
+  "requests" : 2000,
+  "concurrency" : 32,
+  "seconds" : 0.9052018,
+  "requestRps" : 2209.4520801880863,
+  "success" : 2000,
+  "limited" : 0,
+  "selects" : 0,
+  "p50Ms" : 12.2346,
+  "p95Ms" : 30.8566,
+  "p99Ms" : 46.2473
+}, {
+  "phase" : "gateway-cached",
+  "requests" : 2000,
+  "concurrency" : 32,
+  "seconds" : 1.1466648,
+  "requestRps" : 1744.1888858888842,
+  "success" : 2000,
+  "limited" : 0,
+  "selects" : 0,
+  "p50Ms" : 16.0297,
+  "p95Ms" : 33.8207,
+  "p99Ms" : 51.1957
+}, {
+  "phase" : "gateway-limited",
+  "requests" : 2000,
+  "concurrency" : 32,
+  "seconds" : 1.5052131,
+  "requestRps" : 1328.7155154310044,
+  "success" : 5,
+  "limited" : 1995,
+  "selects" : 0,
+  "p50Ms" : 17.0399,
+  "p95Ms" : 33.939,
+  "p99Ms" : 494.266
+} ]

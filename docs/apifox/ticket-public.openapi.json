@@ -3,7 +3,7 @@
   "info": {
     "title": "分布式票务平台 第一版网关API",
     "version": "1.0.0",
-    "description": "基于当前源码整理。全部公开请求经过Gateway；用户身份从Bearer JWT及Redis会话取得，不接受正文userId。模拟支付须启用PAYMENT_SIMULATION_ENABLED。202和支付SUCCESS不等于完成出票；查询订单到COMPLETED。时间为东八区LocalDateTime无时区后缀。金额为人民币BigDecimal。传输层及Gateway自身异常可能使用不同于业务Result的错误正文。"
+    "description": "基于当前源码整理。全部公开请求经过Gateway；用户身份从Bearer JWT及Redis会话取得，不接受正文userId。模拟支付须启用PAYMENT_SIMULATION_ENABLED。202和支付SUCCESS不等于完成出票；查询订单到COMPLETED。时间为东八区LocalDateTime无时区后缀。金额为人民币BigDecimal。传输层及Gateway自身异常可能使用不同于业务Result的错误正文。 第二版默认启用活动展示缓存和活动/订单入口限流：超额429，缓存重建繁忙或限流Redis不可用503。"
   },
   "servers": [
     {
@@ -518,7 +518,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -622,7 +646,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -717,7 +765,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1433,7 +1505,7 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1444,6 +1516,30 @@
           },
           "504": {
             "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1597,7 +1693,7 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1608,6 +1704,30 @@
           },
           "504": {
             "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1734,7 +1854,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -1868,7 +2012,7 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
             "content": {
               "application/json": {
                 "schema": {
@@ -1879,6 +2023,30 @@
           },
           "504": {
             "description": "上游调用超时",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
@@ -2002,7 +2170,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/json": {
                 "schema": {
