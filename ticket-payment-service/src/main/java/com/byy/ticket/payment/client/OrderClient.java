@@ -13,26 +13,49 @@ import org.springframework.web.client.RestClient;
 
 /** 支付到订单的 HTTP 通知；严格核对接收确认，HTTP 200 本身不能代表可靠接收。 */
 @Component
+@org.springframework.boot.context.properties.EnableConfigurationProperties(com.byy.ticket.resilience.HttpResilienceProperties.class)
 public class OrderClient {
     private final RestClient http;
     private final PaymentOrderCredential credential;
+    private final com.byy.ticket.resilience.HttpCallProtection protection;
     private static final ParameterizedTypeReference<Result<Receipt>> TYPE = new ParameterizedTypeReference<>() { };
 
     /** 注入启用服务发现的独立 Builder。 */
     public OrderClient(@LoadBalanced @Qualifier("orderNotificationRestClientBuilder") RestClient.Builder builder,
                        PaymentNotificationProperties properties, PaymentOrderCredential credential) {
+        this(builder,properties,credential,com.byy.ticket.resilience.HttpResilienceProperties.defaults());
+    }
+    @org.springframework.beans.factory.annotation.Autowired
+    public OrderClient(@LoadBalanced @Qualifier("orderNotificationRestClientBuilder") RestClient.Builder builder,
+            PaymentNotificationProperties properties,PaymentOrderCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties settings) {
+        this(builder,properties,credential,settings.order());
+    }
+    /** HTTP通知保护；拒绝与未知结果交给原通知恢复任务，不伪造accepted。 */
+    public OrderClient(RestClient.Builder builder,PaymentNotificationProperties properties,PaymentOrderCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties.Policy policy) {
         this.credential = credential;
         http = builder.clone().baseUrl("http://" + properties.serviceId()).build();
+        protection=new com.byy.ticket.resilience.HttpCallProtection("payment-order",policy,
+                error -> !(error instanceof IllegalArgumentException)
+                        && !(error instanceof com.byy.ticket.resilience.RemoteRequestRejectedException),
+                denied -> new IllegalStateException("订单通知暂被保护组件拒绝，尚未发送请求，保留通知进度",denied));
     }
 
     /** 发送固定订单和支付编号；错误、丢失响应或不匹配确认均交给后台保存重试进度。 */
     public void notifySuccess(String orderNo, String paymentNo) {
+        if(orderNo==null||orderNo.isBlank()||paymentNo==null||paymentNo.isBlank())
+            throw new IllegalArgumentException("付款通知编号不正确");
+        protection.execute(() -> { notifyHttp(orderNo,paymentNo); return null; });
+    }
+    private void notifyHttp(String orderNo,String paymentNo) {
         http.post().uri("/internal/orders/payment-results")
                 .contentType(MediaType.APPLICATION_JSON).accept(MediaType.APPLICATION_JSON)
                 .header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate())
                 .header(PaymentOrderCredential.HEADER, credential.value())
                 .body(new Notification(orderNo, paymentNo))
                 .exchange((request, response) -> {
+                    if(response.getStatusCode().is4xxClientError())throw new com.byy.ticket.resilience.RemoteRequestRejectedException("订单通知HTTP拒绝，status="+response.getStatusCode().value());
                     if (!response.getStatusCode().is2xxSuccessful()) {
                         throw new IllegalStateException("订单通知HTTP失败，status=" + response.getStatusCode().value());
                     }
@@ -50,4 +73,5 @@ public class OrderClient {
     public record Notification(String orderNo, String paymentNo) { }
     /** accepted 只代表付款依据已落库，不代表订单成交。 */
     public record Receipt(String orderNo, String paymentNo, boolean accepted) { }
+    public com.byy.ticket.resilience.HttpCallProtection protection() { return protection; }
 }

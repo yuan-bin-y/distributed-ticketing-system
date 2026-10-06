@@ -26,9 +26,32 @@ import java.util.concurrent.TimeoutException;
 
 /** 订单到支付的HTTP创建调用；按服务名发现实例、传播trace、检查响应，不自动重试写请求。 */
 @Component
+@org.springframework.boot.context.properties.EnableConfigurationProperties(com.byy.ticket.resilience.HttpResilienceProperties.class)
 public class PaymentClient {
+    private final com.byy.ticket.resilience.HttpCallProtection protection;
+
+    /** 查询、创建和冲正共享支付下游保护；不自动重试写请求。 */
+    public PaymentReversalResponse reverse(PaymentReversalRequest request,String orderNo,BigDecimal amount) {
+        if(request==null || !validNo(request.paymentNo()) || !validNo(orderNo) || !validAmount(amount)
+                || request.reason()==null || request.reason().isBlank() || request.reason().length()>256)
+            throw new IllegalArgumentException("冲正快照参数不正确");
+        return protection.execute(() -> reverseHttp(request,orderNo,amount));
+    }
+
+    public PaymentResponse getByOrder(String orderNo) {
+        if(!validNo(orderNo))throw new IllegalArgumentException("订单编号不正确");
+        return protection.execute(() -> getByOrderHttp(orderNo));
+    }
+
+    public PaymentResponse createPayment(PaymentCreateRequest request) {
+        validateRequest(request);
+        return protection.execute(() -> createPaymentHttp(request));
+    }
+
+    /** 本地诊断和验证读取保护状态。 */
+    public com.byy.ticket.resilience.HttpCallProtection protection() { return protection; }
     /** 幂等全额冲正；核对原付款、订单、金额和首次原因，不自动重复发送 POST。 */
-    public PaymentReversalResponse reverse(PaymentReversalRequest request, String orderNo, BigDecimal amount) {
+    private PaymentReversalResponse reverseHttp(PaymentReversalRequest request, String orderNo, BigDecimal amount) {
         if (request == null || !validNo(request.paymentNo()) || !validNo(orderNo) || !validAmount(amount)
                 || request.reason() == null || request.reason().isBlank() || request.reason().length() > 256) {
             throw new IllegalArgumentException("冲正快照参数不正确");
@@ -45,10 +68,14 @@ public class PaymentClient {
                             throw new PaymentServiceCallException(Reason.CONFLICT, "支付冲正参数或状态冲突，需核对");
                         }
                         // 默认模拟开关关闭时也会返回404；保留待冲正状态，待配置恢复后重试。
-                        if (status == 404 || received.getStatusCode().is5xxServerError()) {
+                        if(status==404)throw PaymentServiceCallException.rejectedResponse(Reason.UNAVAILABLE,"模拟冲正入口未开启，请保留待冲正进度");
+                        if (received.getStatusCode().is5xxServerError()) {
                             throw new PaymentServiceCallException(Reason.UNAVAILABLE, "冲正服务暂时不可用或模拟开关未开启");
                         }
-                        if (!received.getStatusCode().is2xxSuccessful()) { throw invalidResponse("冲正HTTP状态异常"); }
+                        if (!received.getStatusCode().is2xxSuccessful()) {
+                            if(received.getStatusCode().is4xxClientError())throw PaymentServiceCallException.rejectedResponse(Reason.INVALID_RESPONSE,"冲正HTTP请求被拒绝");
+                            throw invalidResponse("冲正HTTP状态异常");
+                        }
                         var type = new ParameterizedTypeReference<Result<PaymentReversalResponse>>() { };
                         var result = received.bodyTo(type);
                         var value = result == null ? null : result.data();
@@ -76,7 +103,7 @@ public class PaymentClient {
         }
     }
     /** 根据原订单查询权威支付事实；通知中的成功标记和金额不能作为付款依据。 */
-    public PaymentResponse getByOrder(String orderNo) {
+    private PaymentResponse getByOrderHttp(String orderNo) {
         if (!validNo(orderNo)) { throw new IllegalArgumentException("订单编号不正确"); }
         try {
             return restClient.get().uri("/internal/payments/by-order/{orderNo}", orderNo)
@@ -89,7 +116,10 @@ public class PaymentClient {
                         if (received.getStatusCode().is5xxServerError()) {
                             throw new PaymentServiceCallException(Reason.UNAVAILABLE, "支付服务暂时不可用");
                         }
-                        if (!received.getStatusCode().is2xxSuccessful()) { throw invalidResponse("支付查询HTTP状态异常"); }
+                        if (!received.getStatusCode().is2xxSuccessful()) {
+                            if(received.getStatusCode().is4xxClientError())throw PaymentServiceCallException.rejectedResponse(Reason.INVALID_RESPONSE,"支付查询请求被拒绝");
+                            throw invalidResponse("支付查询HTTP状态异常");
+                        }
                         Result<PaymentResponse> result = received.bodyTo(RESPONSE_TYPE);
                         if (result == null || !"OK".equals(result.code()) || !validResponse(result.data())
                                 || !orderNo.equals(result.data().orderNo())) {
@@ -120,13 +150,30 @@ public class PaymentClient {
     /** 注入支付专用Builder，服务名由LoadBalancer解析成实例地址。 */
     public PaymentClient(@LoadBalanced @Qualifier("paymentRestClientBuilder") RestClient.Builder builder,
                          PaymentClientProperties properties, OrderPaymentCredential credential) {
+        this(builder,properties,credential,com.byy.ticket.resilience.HttpResilienceProperties.defaults());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public PaymentClient(@LoadBalanced @Qualifier("paymentRestClientBuilder") RestClient.Builder builder,
+            PaymentClientProperties properties,OrderPaymentCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties settings) {
+        this(builder,properties,credential,settings.payment());
+    }
+
+    /** 构建支付下游保护器；业务冲突排除，本地拒绝保留原请求与恢复进度。 */
+    public PaymentClient(RestClient.Builder builder,PaymentClientProperties properties,OrderPaymentCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties.Policy policy) {
         // 三个内部调用都携带Order专用服务凭证，不转发用户Token充当服务身份。
         restClient = builder.clone().baseUrl("http://" + properties.serviceId())
                 .defaultHeader(OrderPaymentCredential.HEADER, credential.value()).build();
+        protection=new com.byy.ticket.resilience.HttpCallProtection("order-payment",policy,
+                error -> error instanceof PaymentServiceCallException remote && remote.getReason()!=Reason.CONFLICT
+                        && remote.isCircuitBreakerFailure(),
+                denied -> new PaymentServiceCallException(Reason.UNAVAILABLE,"支付调用暂被保护组件拒绝，尚未发送请求，请保留原编号",denied));
     }
 
     /** 创建或取回同一订单的支付单；核对用户、金额和期限，未知结果只能用原参数核对或重试。 */
-    public PaymentResponse createPayment(PaymentCreateRequest request) {
+    private PaymentResponse createPaymentHttp(PaymentCreateRequest request) {
         validateRequest(request);
         try {
             return restClient.post().uri("/internal/payments")
@@ -153,6 +200,7 @@ public class PaymentClient {
                         }
                         // 创建接口没有合法404业务结果；重定向和其他4xx均按契约错误处理。
                         if (!received.getStatusCode().is2xxSuccessful()) {
+                            if(received.getStatusCode().is4xxClientError())throw PaymentServiceCallException.rejectedResponse(Reason.INVALID_RESPONSE,"支付创建请求被拒绝");
                             throw invalidResponse("支付服务HTTP状态不符合预期");
                         }
                         Result<PaymentResponse> result = received.bodyTo(RESPONSE_TYPE);

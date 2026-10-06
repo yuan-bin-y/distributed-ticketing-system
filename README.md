@@ -21,6 +21,8 @@
 
 已加入[活动缓存、热点重建与网关限流](docs/event-cache-rate-limit.md)：展示查询缓存、跨实例重建锁、发布提交后失效、受控回源，以及响应式 Redis 令牌桶。缓存和限流默认启用；[压测记录](docs/performance/cache-rate-2026-10-07.md)包含查询次数、延迟和限流结果。
 
+已接入[全项目业务HTTP调用保护](docs/http-resilience.md)：Order到Event/Inventory/Payment、Event到Inventory及Payment到Order均使用Resilience4j熔断与并发隔离。各下游独立统计，保护拒绝不发送HTTP，保留原有写请求幂等及事实核对。默认开启，各链路可分别关闭；[Event入口说明](docs/event-resilience.md)保留原配置阅读顺序。
+
 ## 工程结构
 
 Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.1.0.0、MyBatis-Plus 3.5.17。完整版本由父 `pom.xml` 管理。
@@ -34,6 +36,7 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 | ticket-payment-service | 8064 | 模拟支付事实、Outbox事件、通知进度及模拟冲正 |
 | ticket-auth-service | 8065 | 用户、凭证签发与Redis会话 |
 | ticket-common | 不启动 | Result、异常、traceId等基础支持 |
+| ticket-resilience | 不启动 | 通用HTTP熔断、并发隔离与策略绑定 |
 | ticket-security | 不启动 | 用户认证与服务凭证支持 |
 
 第一版五个独立业务库共12张业务表；当前第二版新增支付Outbox和订单消费记录，共14张业务表，另有各库Flyway迁移历史表。服务只访问自己的库，通过HTTP协作；启用MQ时付款通知使用RabbitMQ。Gateway采用WebFlux，业务服务采用Spring MVC。
@@ -71,4 +74,4 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 
 第一版通过API演示，没有业务前端；支付与冲正为模拟，电子票没有入场核验。管理员支持创建完整草稿、查看准备、原参数重新准备和发布，暂不支持编辑已初始化参数、下架或调整库存。
 
-一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿，支付MQ链路使用Outbox与消费幂等。Nacos配置中心、熔断及多机容量验证列入后续学习计划。
+一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿，支付MQ链路使用Outbox与消费幂等。Nacos配置中心及多机容量验证列入后续学习计划。

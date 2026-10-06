@@ -46,6 +46,13 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  http-resilience:
+    inventory:
+      enabled: ${ORDER_INVENTORY_RESILIENCE_ENABLED:true}
+      concurrency: 20
+    payment:
+      enabled: ${ORDER_PAYMENT_RESILIENCE_ENABLED:true}
+      concurrency: 20
   mq:
     enabled: ${TICKET_MQ_ENABLED:false}
     prefix: ${TICKET_MQ_PREFIX:ticket}
@@ -80,6 +87,15 @@ ticket:
     retry-max: 5m
   clients:
     event:
+      resilience:
+        enabled: ${EVENT_RESILIENCE_ENABLED:true}
+        sliding-window-size: 20
+        minimum-number-of-calls: 10
+        failure-rate-threshold: 50
+        open-wait: 10s
+        half-open-calls: 3
+        half-open-max-wait: 10s
+        max-concurrent-calls: 20
       service-id: ticket-event-service
       connect-timeout: ${EVENT_CLIENT_CONNECT_TIMEOUT:2s}
       read-timeout: ${EVENT_CLIENT_READ_TIMEOUT:5s}

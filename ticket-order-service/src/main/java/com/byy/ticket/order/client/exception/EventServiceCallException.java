@@ -8,13 +8,13 @@ public class EventServiceCallException extends RuntimeException {
     public enum Reason { UNAVAILABLE, TIMEOUT, INVALID_RESPONSE }
 
     private final Reason reason;
+    private final boolean circuitBreakerFailure;
 
     /**
      * 保存失败类别和可返回给调用方的提示。
      */
     public EventServiceCallException(Reason reason, String message) {
-        super(message);
-        this.reason = reason;
+        this(reason, message, null);
     }
 
     /**
@@ -23,7 +23,22 @@ public class EventServiceCallException extends RuntimeException {
     public EventServiceCallException(Reason reason, String message, Throwable cause) {
         super(message, cause);
         this.reason = reason;
+        this.circuitBreakerFailure = true;
     }
+
+    private EventServiceCallException(String message) {
+        super(message);
+        this.reason = Reason.INVALID_RESPONSE;
+        this.circuitBreakerFailure = false;
+    }
+
+    /** 远端4xx仍保留原有502契约，但不把请求拒绝计作服务健康故障。 */
+    public static EventServiceCallException rejectedResponse(String message) {
+        return new EventServiceCallException(message);
+    }
+
+    /** 超时、不可用、响应损坏参与统计；远端4xx排除。 */
+    public boolean isCircuitBreakerFailure() { return circuitBreakerFailure; }
 
     /**
      * 返回失败类别，统一异常处理器据此选择对应的 HTTP 状态和错误码。

@@ -61,7 +61,7 @@ public class EventClient {
                         throw new EventServiceCallException(Reason.UNAVAILABLE, "活动服务暂时不可用");
                     })
                     .onStatus(status -> status.is4xxClientError(), (request, result) -> {
-                        throw new EventServiceCallException(Reason.INVALID_RESPONSE, "活动服务响应不符合预期");
+                        throw EventServiceCallException.rejectedResponse("活动服务拒绝了购票规则查询");
                     })
                     .body(RESPONSE_TYPE);
 

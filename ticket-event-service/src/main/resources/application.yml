@@ -26,6 +26,10 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  http-resilience:
+    inventory:
+      enabled: ${EVENT_INVENTORY_RESILIENCE_ENABLED:true}
+      concurrency: 20
   event-cache:
     enabled: ${EVENT_CACHE_ENABLED:true}
     prefix: "${EVENT_CACHE_PREFIX:ticket:{event-cache}:}"

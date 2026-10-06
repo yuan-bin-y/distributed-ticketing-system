@@ -8,6 +8,13 @@ public class InventoryServiceCallException extends RuntimeException {
     public enum Reason { CONFLICT, UNAVAILABLE, TIMEOUT, INVALID_RESPONSE }
 
     private final Reason reason;
+    private boolean circuitBreakerFailure = true;
+
+    public static InventoryServiceCallException rejectedResponse(String message) {
+        var exception=new InventoryServiceCallException(Reason.INVALID_RESPONSE,message);
+        exception.circuitBreakerFailure=false; return exception;
+    }
+    public boolean isCircuitBreakerFailure() { return circuitBreakerFailure; }
 
     /**
      * 保存失败类别和可返回给调用方的提示。

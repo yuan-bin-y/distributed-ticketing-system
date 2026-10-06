@@ -30,6 +30,7 @@ import java.util.function.Predicate;
  * 每次调用核对统一响应和业务字段；不自动重试写请求，避免丢失响应时误判库存状态。
  */
 @Component
+@org.springframework.boot.context.properties.EnableConfigurationProperties(com.byy.ticket.resilience.HttpResilienceProperties.class)
 public class InventoryClient {
     private static final ParameterizedTypeReference<Result<StockReservationResponse>> RESPONSE_TYPE =
             new ParameterizedTypeReference<>() { };
@@ -37,14 +38,32 @@ public class InventoryClient {
             new ParameterizedTypeReference<>() { };
     private static final Set<String> STATUSES = Set.of("RESERVED", "SOLD", "RELEASED");
     private final RestClient restClient;
+    private final com.byy.ticket.resilience.HttpCallProtection protection;
 
     /**
      * 使用库存专用、带负载均衡的 Builder，复制后把库存服务名设置成 baseUrl。
      */
     public InventoryClient(@LoadBalanced @Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,
                            InventoryClientProperties properties, OrderInventoryCredential credential) {
+        this(builder,properties,credential,com.byy.ticket.resilience.HttpResilienceProperties.defaults());
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public InventoryClient(@LoadBalanced @Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,
+            InventoryClientProperties properties,OrderInventoryCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties settings) {
+        this(builder,properties,credential,settings.inventory());
+    }
+
+    /** 构建库存专属保护器；明确业务冲突排除，拒绝交给原持久化恢复流程。 */
+    public InventoryClient(RestClient.Builder builder,InventoryClientProperties properties,OrderInventoryCredential credential,
+            com.byy.ticket.resilience.HttpResilienceProperties.Policy policy) {
         restClient = builder.clone().baseUrl("http://" + properties.serviceId())
                 .defaultHeader(OrderInventoryCredential.HEADER, credential.value()).build();
+        protection=new com.byy.ticket.resilience.HttpCallProtection("order-inventory",policy,
+                error -> error instanceof InventoryServiceCallException remote && remote.getReason()!=Reason.CONFLICT
+                        && remote.isCircuitBreakerFailure(),
+                denied -> new InventoryServiceCallException(Reason.UNAVAILABLE,"库存调用暂被保护组件拒绝，尚未发送请求，请保留进度稍后核对",denied));
     }
 
     /**
@@ -99,6 +118,12 @@ public class InventoryClient {
      */
     private StockReservationResponse execute(RestClient.RequestHeadersSpec<?> request,
                                                Predicate<StockReservationResponse> matches) {
+        return protection.execute(() -> executeHttp(request,matches));
+    }
+
+    /** 实际HTTP与异常归一化处于熔断统计内，保留请求结果未知的语义。 */
+    private StockReservationResponse executeHttp(RestClient.RequestHeadersSpec<?> request,
+                                               Predicate<StockReservationResponse> matches) {
         try {
             return request.header(TraceIdContext.HTTP_HEADER, TraceIdContext.getOrCreate())
                     .accept(MediaType.APPLICATION_JSON)
@@ -126,6 +151,8 @@ public class InventoryClient {
                         }
                         // exchange 自行处理 HTTP 状态；3xx 和其他4xx均不能当作成功。
                         if (!received.getStatusCode().is2xxSuccessful()) {
+                            if(received.getStatusCode().is4xxClientError())
+                                throw InventoryServiceCallException.rejectedResponse("库存服务拒绝了请求");
                             throw invalidResponse("库存服务 HTTP 状态不符合预期");
                         }
                         Result<StockReservationResponse> result = received.bodyTo(RESPONSE_TYPE);
@@ -155,6 +182,9 @@ public class InventoryClient {
                     "库存服务响应解析失败，操作结果请使用相同请求核对", exception);
         }
     }
+
+    /** 本地验证读取状态；无公开管理接口。 */
+    public com.byy.ticket.resilience.HttpCallProtection protection() { return protection; }
 
     /**
      * 验证预留编号、订单编号、各 ID、数量、日期及状态属于约定范围。

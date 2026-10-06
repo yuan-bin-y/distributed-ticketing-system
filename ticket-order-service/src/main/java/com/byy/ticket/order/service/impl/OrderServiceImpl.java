@@ -1,6 +1,6 @@
 package com.byy.ticket.order.service.impl;
 
-import com.byy.ticket.order.client.EventClient;
+import com.byy.ticket.order.client.EventCallGuard;
 import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.PaymentClient;
@@ -33,12 +33,12 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 
 /**
- * 订单业务编排：EventClient查询规则，InventoryClient调用库存，PaymentClient创建支付单。
+ * 订单业务编排：EventCallGuard保护规则查询，InventoryClient调用库存，PaymentClient创建支付单。
  * Client 发出 HTTP 请求；目标服务自己的 Controller、Service 和 Mapper 完成对应业务。
  */
 @Service
 public class OrderServiceImpl implements OrderService {
-    private final EventClient eventClient;
+    private final EventCallGuard eventCallGuard;
     private final InventoryClient inventoryClient;
     private final PaymentClient paymentClient;
     private final Clock clock;
@@ -51,10 +51,10 @@ public class OrderServiceImpl implements OrderService {
     /**
      * 注入远程 Client、本服务的订单 Mapper、短事务与恢复组件；不访问其他服务的数据库。
      */
-    public OrderServiceImpl(EventClient eventClient, InventoryClient inventoryClient, Clock clock,
+    public OrderServiceImpl(EventCallGuard eventCallGuard, InventoryClient inventoryClient, Clock clock,
                             OrderMapper orders, OrderItemMapper items, OrderTransactionService transactions,
                             OrderStockWorkflow workflow, OrderWorkflowProperties properties, PaymentClient paymentClient) {
-        this.eventClient = eventClient;
+        this.eventCallGuard = eventCallGuard;
         this.inventoryClient = inventoryClient;
         this.clock = clock;
         this.orders = orders;
@@ -79,7 +79,7 @@ public class OrderServiceImpl implements OrderService {
         validateCreate(userId, request);
         TicketOrder existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
         if (existing != null) { return repeat(existing, request); }
-        var rule = PerformanceSpan.measure("event.http",()->eventClient.getPurchaseRule(request.ticketTierId()));
+        var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
         if (now.isBefore(rule.saleStartTime()) || !now.isBefore(rule.saleEndTime())) {
             throw new IllegalArgumentException("当前不在开售时间内");
@@ -200,7 +200,7 @@ public class OrderServiceImpl implements OrderService {
     }
 
     /**
-     * 先校验参数，再调用 EventClient.getPurchaseRule 读取活动规则。
+     * 先校验参数，再经过 EventCallGuard 调用 EventClient 读取活动规则。
      * 检查当前时间在开售时间内、本次购买数量不超过限购，并按单价乘数量计算总价。
      * 只生成预览 VO，不创建订单、不预留库存，也不统计用户历史购买次数。
      */
@@ -210,7 +210,7 @@ public class OrderServiceImpl implements OrderService {
                 || request.quantity() == null || request.quantity() < 1) {
             throw new IllegalArgumentException("票档ID和购买数量必须大于零");
         }
-        var rule = PerformanceSpan.measure("event.http",()->eventClient.getPurchaseRule(request.ticketTierId()));
+        var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock);
         // 开售时间包含起点，停售时间不包含终点：[saleStartTime, saleEndTime)。
         if (now.isBefore(rule.saleStartTime())) {

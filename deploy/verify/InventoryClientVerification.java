@@ -1,4 +1,5 @@
 import com.byy.ticket.order.client.EventClient;
+import com.byy.ticket.order.client.EventCallGuard;
 import com.byy.ticket.order.config.RestClientConfig;
 import com.byy.ticket.order.config.OrderClockConfig;
 import com.byy.ticket.order.config.OrderWorkflowProperties;
@@ -51,7 +52,7 @@ public class InventoryClientVerification {
             "org.springframework.boot.jdbc.autoconfigure.DataSourceAutoConfiguration",
             "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration",
             "com.baomidou.mybatisplus.autoconfigure.MybatisPlusAutoConfiguration"})
-    @Import({RestClientConfig.class, OrderClockConfig.class, EventClient.class, InventoryClient.class,
+    @Import({RestClientConfig.class, OrderClockConfig.class, EventClient.class, EventCallGuard.class, InventoryClient.class,
             InternalOrderStockController.class, OrderController.class, OrderIdentityResolver.class,
             TraceIdFilter.class, GlobalExceptionHandler.class})
     public static class ClientOnlyApplication {
@@ -62,7 +63,7 @@ public class InventoryClientVerification {
 
         /** 不构建数据库和恢复组件；本测试不调用 create/getOrder。 */
         @Bean
-        OrderServiceImpl orderService(EventClient event, InventoryClient inventory, Clock clock,
+        OrderServiceImpl orderService(EventCallGuard event, InventoryClient inventory, Clock clock,
                                       OrderWorkflowProperties properties) {
             return new OrderServiceImpl(event, inventory, clock, null, null, null, null, properties, null);
         }

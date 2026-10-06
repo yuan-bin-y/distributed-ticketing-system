@@ -46,6 +46,10 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  http-resilience:
+    order:
+      enabled: ${PAYMENT_ORDER_RESILIENCE_ENABLED:true}
+      concurrency: 20
   mq:
     enabled: ${TICKET_MQ_ENABLED:false}
     prefix: ${TICKET_MQ_PREFIX:ticket}

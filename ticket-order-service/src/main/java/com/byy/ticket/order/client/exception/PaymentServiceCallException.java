@@ -5,6 +5,13 @@ public class PaymentServiceCallException extends RuntimeException {
     /** 区分业务冲突、不可用、超时与无效响应，供调用方判断是否可以原请求重试。 */
     public enum Reason { CONFLICT, UNAVAILABLE, TIMEOUT, INVALID_RESPONSE }
     private final Reason reason;
+    private boolean circuitBreakerFailure = true;
+
+    public static PaymentServiceCallException rejectedResponse(Reason reason,String message) {
+        var exception=new PaymentServiceCallException(reason,message);
+        exception.circuitBreakerFailure=false; return exception;
+    }
+    public boolean isCircuitBreakerFailure() { return circuitBreakerFailure; }
 
     /** 保存失败类别和可读提示。 */
     public PaymentServiceCallException(Reason reason, String message) {
