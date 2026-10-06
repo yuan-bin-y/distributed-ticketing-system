@@ -35,6 +35,7 @@ public class PaymentVerification {
     PaymentService service;
     int port, passed;
     String durableOrder;
+    String legacyPending, legacyDelivered, legacyUnpaid;
     boolean schemaCreated;
 
     public static void main(String[] args) throws Exception {
@@ -52,7 +53,7 @@ public class PaymentVerification {
             sql.execute("CREATE DATABASE " + schema);
             schemaCreated = true;
         }
-        try (var context = start(false, false)) {
+        try (var context = start(false, false, "2")) {
             bind(context);
             var payment = service.create(request(newNo(), "398.00", future()));
             expect(ResourceNotFoundException.class, () -> service.simulateSuccess(1L, payment.paymentNo()),
@@ -62,11 +63,15 @@ public class PaymentVerification {
                     "reversal simulation disabled by default");
             check(http("POST", "/api/payments/" + payment.paymentNo() + "/simulate-success", null,
                     "X-Dev-User-Id", "1").statusCode() == 401, "dev identity disabled by default");
+            legacyPending = legacySuccess("PENDING");
+            legacyDelivered = legacySuccess("DELIVERED");
+            legacyUnpaid = service.create(request(newNo(), "5.00", future())).paymentNo();
         }
         try (var context = start(true, false)) {
             bind(context);
-            check(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class) == 2,
+            check(jdbc.queryForObject("SELECT COUNT(*) FROM flyway_schema_history WHERE success=1", Integer.class) == 3,
                     "Flyway migration validates on second start");
+            migrationOutbox();
             createAndConflict();
             concurrentCreate();
             paymentAndExpiry();
@@ -80,6 +85,10 @@ public class PaymentVerification {
             var payment = service.getByOrder(durableOrder);
             check("SUCCESS".equals(payment.status()) && "SUCCESS".equals(payment.reversalStatus()),
                     "payment and reversal facts survive restart");
+            check(count("t_outbox_event", "aggregate_id", payment.paymentNo()) == 1,
+                    "one durable payment event survives restart");
+            check(count("t_outbox_event", "aggregate_id", legacyDelivered) == 1,
+                    "migration does not duplicate historical events on restart");
             if (verifyNacos) {
                 String url = "http://127.0.0.1:8848/nacos/v1/ns/instance/list"
                         + "?serviceName=ticket-payment-service&groupName=" + group + "&healthyOnly=true";
@@ -104,14 +113,20 @@ public class PaymentVerification {
     }
 
     org.springframework.context.ConfigurableApplicationContext start(boolean enabled, boolean nacos) {
+        return start(enabled, nacos, "3");
+    }
+
+    org.springframework.context.ConfigurableApplicationContext start(boolean enabled, boolean nacos, String target) {
         var app = new SpringApplication(TicketPaymentApplication.class, ClockConfiguration.class);
         return app.run("--server.port=0", "--spring.main.banner-mode=off",
                 "--spring.datasource.url=jdbc:mysql://127.0.0.1:3306/" + schema
                         + "?connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true",
                 "--spring.datasource.hikari.maximum-pool-size=25",
+                "--spring.flyway.target=" + target,
                 "--ticket.payment.simulation-enabled=" + enabled,
                 "--ticket.payment.dev-identity-enabled=" + enabled,
                 "--ticket.payment.notification.enabled=false",
+                "--ticket.mq.enabled=false",
                 "--spring.cloud.nacos.discovery.enabled=" + nacos,
                 "--spring.cloud.discovery.enabled=" + nacos,
                 "--spring.cloud.nacos.discovery.server-addr=127.0.0.1:8848",
@@ -124,6 +139,40 @@ public class PaymentVerification {
         jdbc = context.getBean(JdbcTemplate.class);
         service = context.getBean(PaymentService.class);
         port = ((WebServerApplicationContext) context).getWebServer().getPort();
+    }
+
+    /** 用旧版结构准备历史付款，验证真实V2到V3升级而非只测试空库。 */
+    String legacySuccess(String notify) {
+        var payment = service.create(request(newNo(), "9.00", future()));
+        jdbc.update("UPDATE t_payment SET status='SUCCESS',paid_at=?,notify_status=?,next_notify_at=? WHERE payment_no=?",
+                now(), notify, now(), payment.paymentNo());
+        return payment.paymentNo();
+    }
+
+    void migrationOutbox() {
+        for (String number : List.of(legacyPending, legacyDelivered)) {
+            JsonNode event = outbox(number);
+            check("PENDING".equals(jdbc.queryForObject("SELECT status FROM t_outbox_event WHERE aggregate_id=?",
+                    String.class, number)), "historical success starts with unpublished event");
+            service.simulateSuccess(1L, number);
+            check(event.equals(outbox(number)), "historical repeat keeps the backfilled event");
+        }
+        check(count("t_outbox_event", "aggregate_id", legacyUnpaid) == 0, "unpaid history has no success event");
+        System.out.println("PASS V2 to V3 backfill, delivered history and stable event payloads");
+    }
+
+    /** 检查唯一消息以及消息契约与数据库付款归属，返回原载荷供重复操作比较。 */
+    JsonNode outbox(String number) {
+        check(count("t_outbox_event", "aggregate_id", number) == 1, "one event per successful payment");
+        var row = jdbc.queryForMap("SELECT event_id,payload,trace_id FROM t_outbox_event WHERE aggregate_id=?", number);
+        JsonNode payload = JSON.readTree(row.get("payload").toString());
+        check(row.get("event_id").equals(payload.path("eventId").asString())
+                && "PAYMENT_SUCCEEDED".equals(payload.path("eventType").asString())
+                && payload.path("schemaVersion").asInt() == 1
+                && number.equals(payload.path("paymentNo").asString())
+                && service.getOwned(1L, number).orderNo().equals(payload.path("orderNo").asString())
+                && row.get("trace_id").toString().matches("[0-9a-f]{32}"), "event identity, contract and trace are valid");
+        return payload;
     }
 
     void createAndConflict() {
@@ -189,6 +238,9 @@ public class PaymentVerification {
         var payment = service.create(req);
         CLOCK.set(req.expiresAt().minusNanos(1_000_000));
         var paid = service.simulateSuccess(1L,payment.paymentNo());
+        JsonNode originalEvent = outbox(payment.paymentNo());
+        jdbc.update("UPDATE t_outbox_event SET status='PUBLISHED',published_at=?,attempt_count=3 WHERE aggregate_id=?",
+                now(), payment.paymentNo());
         check("SUCCESS".equals(paid.status()) && "PENDING".equals(paid.notifyStatus()),
                 "payment before expiry records success and pending notification");
         check(paid.paidAt().equals(now()), "paid time uses fixed millisecond clock");
@@ -198,6 +250,9 @@ public class PaymentVerification {
                 payment.paymentNo());
         CLOCK.set(req.expiresAt().plusSeconds(1));
         var repeated = service.simulateSuccess(1L,payment.paymentNo());
+        check(originalEvent.equals(outbox(payment.paymentNo())), "repeat preserves original event ID and payload");
+        check(jdbc.queryForObject("SELECT status='PUBLISHED' AND attempt_count=3 FROM t_outbox_event WHERE aggregate_id=?",
+                Boolean.class, payment.paymentNo()), "repeat does not reset event publishing progress");
         check(repeated.paidAt().equals(paid.paidAt()) && "DELIVERED".equals(repeated.notifyStatus()),
                 "successful retry after expiry preserves original paid time and delivery");
         check(jdbc.queryForObject("SELECT notify_attempt_count FROM t_payment WHERE payment_no=?",
@@ -222,6 +277,7 @@ public class PaymentVerification {
         Set<LocalDateTime> times = new HashSet<>();
         for(var paid:race(commands)) times.add(paid.paidAt());
         check(times.size()==1, "20 concurrent success calls preserve one paid time");
+        outbox(payment.paymentNo());
         var reversalReq = new PaymentReversalDTO(payment.paymentNo(),"订单已关闭");
         var reversals = new ArrayList<Callable<PaymentReversalVO>>();
         for(int i=0;i<20;i++) reversals.add(() -> service.reverse(reversalReq));
@@ -265,7 +321,19 @@ public class PaymentVerification {
         var current=service.getOwned(1L,payment.paymentNo());
         check("CREATED".equals(current.status()) && current.paidAt()==null && "NONE".equals(current.notifyStatus()),
                 "failed payment update leaves neither paid fact nor pending notification");
+        check(count("t_outbox_event", "aggregate_id", payment.paymentNo()) == 0, "failed payment creates no event");
+        jdbc.execute("CREATE TRIGGER verify_fail_outbox BEFORE INSERT ON t_outbox_event FOR EACH ROW"
+                + " SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='verification outbox failure'");
+        try {
+            expect(DataAccessException.class, () -> service.simulateSuccess(1L, payment.paymentNo()),
+                    "injected outbox insertion failure propagated");
+        } finally { jdbc.execute("DROP TRIGGER verify_fail_outbox"); }
+        current = service.getOwned(1L, payment.paymentNo());
+        check("CREATED".equals(current.status()) && current.paidAt()==null && "NONE".equals(current.notifyStatus()),
+                "outbox failure rolls paid fact and HTTP notification back");
+        check(count("t_outbox_event", "aggregate_id", payment.paymentNo()) == 0, "outbox failure leaves no event");
         service.simulateSuccess(1L,payment.paymentNo());
+        outbox(payment.paymentNo());
         jdbc.execute("CREATE TRIGGER verify_fail_reversal BEFORE UPDATE ON t_payment_reversal FOR EACH ROW"
                 + " SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='verification reversal failure'");
         try {

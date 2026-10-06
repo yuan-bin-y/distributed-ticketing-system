@@ -15,6 +15,10 @@
 | [技术栈与简历描述](docs/v1-resume.md) | 学习重点、项目介绍和可引用的实测数据 |
 | [功能验收记录](docs/v1-acceptance.md) | 312项功能与故障检查、复现方式 |
 
+## 第二版进度
+
+已接通[支付MQ与订单消费](docs/payment-mq.md)：付款成功与[Outbox事件](docs/payment-outbox.md)同事务保存，发送器等待Confirm并检查Return；订单回查付款事实，消费记录与付款依据同事务提交后ACK。支持延迟重试、死信查看及确认重投。默认保留HTTP模式，设置 `TICKET_MQ_ENABLED=true` 开启MQ链路。
+
 ## 工程结构
 
 Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.1.0.0、MyBatis-Plus 3.5.17。完整版本由父 `pom.xml` 管理。
@@ -23,14 +27,14 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 | --- | --- | --- |
 | ticket-gateway | 8060 | 统一路由和响应式身份准入，无业务数据库 |
 | ticket-event-service | 8061 | 活动、场次、票档、发布及库存准备进度 |
-| ticket-order-service | 8062 | 订单、价格快照、累计限购、履约进度和电子票 |
+| ticket-order-service | 8062 | 订单、价格快照、累计限购、履约进度、消费记录和电子票 |
 | ticket-inventory-service | 8063 | 实际库存及预留记录 |
-| ticket-payment-service | 8064 | 模拟支付事实、通知进度及模拟冲正 |
+| ticket-payment-service | 8064 | 模拟支付事实、Outbox事件、通知进度及模拟冲正 |
 | ticket-auth-service | 8065 | 用户、凭证签发与Redis会话 |
 | ticket-common | 不启动 | Result、异常、traceId等基础支持 |
 | ticket-security | 不启动 | 用户认证与服务凭证支持 |
 
-五个独立业务库共12张业务表，另有各库Flyway迁移历史表。服务只访问自己的库，通过RestClient、Nacos和LoadBalancer进行HTTP协作。Gateway采用WebFlux，业务服务采用Spring MVC。
+第一版五个独立业务库共12张业务表；当前第二版新增支付Outbox和订单消费记录，共14张业务表，另有各库Flyway迁移历史表。服务只访问自己的库，通过HTTP协作；启用MQ时付款通知使用RabbitMQ。Gateway采用WebFlux，业务服务采用Spring MVC。
 
 ## 正确性与性能结果
 
@@ -65,4 +69,4 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 
 第一版通过API演示，没有业务前端；支付与冲正为模拟，电子票没有入场核验。管理员支持创建完整草稿、查看准备、原参数重新准备和发布，暂不支持编辑已初始化参数、下架或调整库存。
 
-一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿。MQ、Outbox、Nacos配置中心、限流、熔断及多机容量验证列入后续学习计划，尚未实现。
+一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿，支付MQ链路使用Outbox与消费幂等。Nacos配置中心、限流、熔断及多机容量验证列入后续学习计划。

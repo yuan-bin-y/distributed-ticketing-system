@@ -284,6 +284,7 @@ public class OrderPaymentVerification {
         List<String> args=new ArrayList<>(List.of(Path.of(System.getProperty("java.home"),"bin","java.exe").toString(),
                 "-jar",artifact.toString(),"--server.port="+port,"--spring.cloud.nacos.discovery.enabled=false",
                 "--spring.main.banner-mode=off","--logging.level.root=ERROR","--spring.datasource.url="+dbUrl(schema)));
+        if(extra.stream().noneMatch(value->value.startsWith("--ticket.mq.enabled="))) args.add("--ticket.mq.enabled=false");
         args.addAll(extra);
         Process process=new ProcessBuilder(args).directory(root.toFile()).redirectErrorStream(true)
                 .redirectOutput(logs.resolve(module+"_"+serial+++".log").toFile()).start();

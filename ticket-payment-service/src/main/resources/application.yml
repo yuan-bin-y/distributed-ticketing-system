@@ -2,6 +2,23 @@ server:
   port: ${PAYMENT_PORT:8064}
 
 spring:
+  rabbitmq:
+    host: ${LOCAL_RABBITMQ_HOST:127.0.0.1}
+    port: ${LOCAL_RABBITMQ_PORT:5672}
+    username: ${LOCAL_RABBITMQ_USERNAME:guest}
+    password: ${LOCAL_RABBITMQ_PASSWORD:guest}
+    virtual-host: ${LOCAL_RABBITMQ_VHOST:/}
+    connection-timeout: 3s
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+    listener:
+      simple:
+        auto-startup: true
+        acknowledge-mode: manual
+        prefetch: 10
+        default-requeue-rejected: true
   application:
     name: ticket-payment-service
   data:
@@ -29,6 +46,10 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  mq:
+    enabled: ${TICKET_MQ_ENABLED:false}
+    prefix: ${TICKET_MQ_PREFIX:ticket}
+    retry-delays-ms: ${TICKET_MQ_RETRY_DELAYS_MS:10000,30000,120000}
   security:
     issuer: ${TICKET_TOKEN_ISSUER:ticket-auth-service}
     audience: ${TICKET_TOKEN_AUDIENCE:ticket-api}

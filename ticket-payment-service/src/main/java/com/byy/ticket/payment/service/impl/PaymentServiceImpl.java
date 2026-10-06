@@ -7,6 +7,7 @@ import com.byy.ticket.payment.exception.PaymentConflictException;
 import com.byy.ticket.payment.mapper.*;
 import com.byy.ticket.payment.model.*;
 import com.byy.ticket.payment.service.PaymentService;
+import com.byy.ticket.payment.service.PaymentOutboxService;
 import com.byy.ticket.payment.vo.payment.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -17,22 +18,24 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
 
-/** 支付本地事务：唯一键及行锁保证幂等，支付事实和通知进度一起保存。 */
+/** 支付本地事务：付款事实、Outbox事件及兼容HTTP通知进度一起保存。 */
 @Service
 public class PaymentServiceImpl implements PaymentService {
     private static final BigDecimal MAX_AMOUNT = new BigDecimal("9999999999999999.99");
     private final PaymentMapper payments;
     private final PaymentReversalMapper reversals;
+    private final PaymentOutboxService outbox;
     private final Clock clock;
     private final PaymentProperties properties;
 
     /** 注入本服务 Mapper、固定时钟和模拟开关，不依赖其他服务数据库。 */
     public PaymentServiceImpl(PaymentMapper payments, PaymentReversalMapper reversals,
-                              Clock clock, PaymentProperties properties) {
+                              Clock clock, PaymentProperties properties, PaymentOutboxService outbox) {
         this.payments = payments;
         this.reversals = reversals;
         this.clock = clock;
         this.properties = properties;
+        this.outbox = outbox;
     }
 
     /** 首次创建检查未来期限；重复创建即使过期也核对原参数并返回原记录。 */
@@ -58,7 +61,7 @@ public class PaymentServiceImpl implements PaymentService {
         return toVO(existing);
     }
 
-    /** 在行锁下保存首次成功事实；重复成功不重置通知时间、次数或首次付款时间。 */
+    /** 行锁与同一本地事务保证付款和事件同时提交；重复成功仅核对原事件，不重置进度。 */
     @Override
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PaymentVO simulateSuccess(Long userId, String paymentNo) {
@@ -69,7 +72,10 @@ public class PaymentServiceImpl implements PaymentService {
         if (payment == null || !userId.equals(payment.getUserId())) {
             throw new ResourceNotFoundException("支付单不存在");
         }
-        if (PaymentStatus.SUCCESS.name().equals(payment.getStatus())) { return toVO(payment); }
+        if (PaymentStatus.SUCCESS.name().equals(payment.getStatus())) {
+            outbox.requireExisting(payment);
+            return toVO(payment);
+        }
         LocalDateTime paidAt = now();
         if (!payment.getExpiresAt().isAfter(paidAt)) {
             throw new PaymentConflictException("支付单已到期，不能首次模拟付款");
@@ -77,7 +83,9 @@ public class PaymentServiceImpl implements PaymentService {
         if (payments.markSuccess(payment.getId(), paidAt) != 1) {
             throw new IllegalStateException("支付成功状态保存失败");
         }
-        return toVO(payments.selectById(payment.getId()));
+        Payment succeeded = payments.selectById(payment.getId());
+        outbox.recordSuccess(succeeded);
+        return toVO(succeeded);
     }
 
     /** 订单侧核对入口；读取本库支付与冲正事实，不推断订单是否履约。 */

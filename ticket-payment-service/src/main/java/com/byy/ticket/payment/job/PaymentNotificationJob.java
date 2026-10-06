@@ -10,6 +10,8 @@ import org.springframework.stereotype.Component;
 public class PaymentNotificationJob {
     private final PaymentNotificationWorkflow workflow;
     private final PaymentNotificationProperties properties;
+    @org.springframework.beans.factory.annotation.Value("${ticket.mq.enabled:false}")
+    private boolean mqEnabled;
 
     /** 注入可独立验证的流程与任务开关。 */
     public PaymentNotificationJob(PaymentNotificationWorkflow workflow, PaymentNotificationProperties properties) {
@@ -18,5 +20,5 @@ public class PaymentNotificationJob {
 
     /** 显式关闭任务时保留 PENDING，之后重新开启可以恢复。 */
     @Scheduled(fixedDelayString="${ticket.payment.notification.fixed-delay:5000}")
-    public void reconcile() { if (properties.enabled()) { workflow.recoverDue(); } }
+    public void reconcile() { if (properties.enabled() && !mqEnabled) { workflow.recoverDue(); } }
 }
