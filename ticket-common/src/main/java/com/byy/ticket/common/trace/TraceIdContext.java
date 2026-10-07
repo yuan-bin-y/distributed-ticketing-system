@@ -9,7 +9,7 @@ import java.util.UUID;
  */
 public final class TraceIdContext {
     public static final String HTTP_HEADER = "X-Trace-Id";
-    private static final String MDC_KEY = "traceId";
+    public static final String MDC_KEY = "traceId";
 
     /**
      * 工具类不需要实例，私有构造方法限制外部创建对象。

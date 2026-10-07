@@ -1,0 +1,4 @@
+# 本阶段Inventory仅集中管理日志级别，不新增业务参数。
+logging:
+  level:
+    com.byy.ticket.inventory: INFO

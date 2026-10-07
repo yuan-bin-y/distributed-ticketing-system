@@ -191,7 +191,7 @@ public class EventCacheLoadVerification extends EventAdministrationVerification 
     void boundaries()throws Exception{
         String p=cachePrefix+"boundary:";
         redis.opsForValue().set(p+"epoch","0");
-        var cache=new EventQueryCache(redis,JSON,true,p,1000,400,100,2);
+        var cache=new EventQueryCache(redis,JSON,true,p,new com.byy.ticket.event.cache.EventCacheTtl(1000),400,100,2);
         var type=JSON.getTypeFactory().constructType(String.class);
         var entered=new CountDownLatch(1);var resume=new CountDownLatch(1);
         var old=pool.submit(()->cache.get("lease",type,()->{entered.countDown();try{resume.await();}catch(InterruptedException e){throw new RuntimeException(e);}return "old";}));
@@ -216,7 +216,7 @@ public class EventCacheLoadVerification extends EventAdministrationVerification 
         redis.delete(p+"epoch");
         check(cache.get("corrupt",type,()->"new-generation").equals("new-generation"),
             "missing epoch cannot resurrect old-generation cache");
-        var bounded=new EventQueryCache(redis,JSON,false,p+"bulk:",1000,400,100,1);
+        var bounded=new EventQueryCache(redis,JSON,false,p+"bulk:",new com.byy.ticket.event.cache.EventCacheTtl(1000),400,100,1);
         var holding=new CountDownLatch(1);var release=new CountDownLatch(1);
         var pending=pool.submit(()->bounded.uncached(()->{holding.countDown();try{release.await();}
             catch(InterruptedException e){throw new RuntimeException(e);}return "done";}));
@@ -233,7 +233,7 @@ public class EventCacheLoadVerification extends EventAdministrationVerification 
         factory.afterPropertiesSet();factory.start();
         try{
             var unavailable=new StringRedisTemplate(factory);
-            var fallback=new EventQueryCache(unavailable,JSON,true,p+"outage:",1000,400,100,1);
+            var fallback=new EventQueryCache(unavailable,JSON,true,p+"outage:",new com.byy.ticket.event.cache.EventCacheTtl(1000),400,100,1);
             check(fallback.get("read",type,()->"database").equals("database")&&fallback.failures.sum()>0,
                 "Redis outage uses controlled database fallback");
         }finally{factory.destroy();}

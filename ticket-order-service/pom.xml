@@ -12,6 +12,21 @@
     <artifactId>ticket-order-service</artifactId>
 
     <dependencies>
+        <!-- Nacos配置中心客户端，版本由Alibaba BOM管理。 -->
+        <dependency>
+            <groupId>com.alibaba.cloud</groupId>
+            <artifactId>spring-cloud-starter-alibaba-nacos-config</artifactId>
+        </dependency>
+        <dependency><groupId>com.byy</groupId><artifactId>ticket-observability</artifactId></dependency>
+        <!-- HTTP Observation、Micrometer Tracing 与 OpenTelemetry OTLP 导出。 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-opentelemetry</artifactId>
+        </dependency>
         <dependency><groupId>com.byy</groupId><artifactId>ticket-resilience</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-amqp</artifactId></dependency>
         <dependency><groupId>com.byy</groupId><artifactId>ticket-security</artifactId></dependency>

@@ -16,6 +16,9 @@ public class TicketOrder {
     private Long id;
     /** 跨服务预留使用的稳定编号。 */
     private String orderNo;
+    /** 最近业务阶段的因果上下文，首次付款接收后用于后台履约；不是认证凭证。 */
+    private String traceParent;
+    private String traceState;
     /** 订单归属用户。 */
     private Long userId;
     /** 用户本次购买的幂等键。 */

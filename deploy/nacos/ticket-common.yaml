@@ -1,0 +1,9 @@
+# 六服务共用；服务专属文件后加载，可以覆盖同名键。
+logging:
+  level:
+    com.byy: INFO
+# 采样器在启动时创建，修改后需要重启；继续支持原环境变量覆盖。
+management:
+  tracing:
+    sampling:
+      probability: ${TICKET_TRACING_SAMPLE_RATE:0.1}

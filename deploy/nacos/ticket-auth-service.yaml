@@ -1,0 +1,8 @@
+logging:
+  level:
+    com.byy.ticket.auth: INFO
+# 当前认证参数在启动时绑定，修改后重启Auth。
+ticket:
+  auth:
+    access-ttl: 15m
+    refresh-ttl: 7d

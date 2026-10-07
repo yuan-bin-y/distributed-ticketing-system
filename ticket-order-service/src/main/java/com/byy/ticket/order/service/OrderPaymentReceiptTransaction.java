@@ -5,6 +5,7 @@ import com.byy.ticket.order.client.dto.PaymentResponse;
 import com.byy.ticket.order.exception.OrderConflictException;
 import com.byy.ticket.order.mapper.OrderMapper;
 import com.byy.ticket.order.model.OrderStatus;
+import com.byy.ticket.observability.TraceSupport;
 import com.byy.ticket.order.vo.order.PaymentReceiptVO;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,9 +14,10 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class OrderPaymentReceiptTransaction {
     private final OrderMapper orders;
+    private final TraceSupport traces;
 
     /** 注入订单自己的 Mapper。 */
-    public OrderPaymentReceiptTransaction(OrderMapper orders) { this.orders = orders; }
+    public OrderPaymentReceiptTransaction(OrderMapper orders, TraceSupport traces) { this.orders = orders; this.traces = traces; }
 
     /** 与超时关闭竞争；有原预留编号的付款进入库存核对，重复通知不重置后台进度。 */
     @Transactional
@@ -45,6 +47,11 @@ public class OrderPaymentReceiptTransaction {
         String error = canReconcile ? null : "付款缺少预留依据或已成交后出现外部冲正，需人工核对";
         if (orders.savePayment(order.getId(), payment.paymentNo(), payment.paidAt(), target, error) != 1) {
             throw new IllegalStateException("付款依据保存失败");
+        }
+        if (order.getPaymentNo() == null) {
+            var context = traces.capture();
+            if (orders.saveTraceContext(order.getId(), context.traceParent(), context.traceState()) != 1)
+                throw new IllegalStateException("付款处理上下文保存失败");
         }
         return new PaymentReceiptVO(order.getOrderNo(), payment.paymentNo(), true);
     }

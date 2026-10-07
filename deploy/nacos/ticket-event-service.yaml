@@ -1,0 +1,8 @@
+# Nacos: public / TICKET_GROUP / ticket-event-service.yaml，格式 YAML。
+logging:
+  level:
+    com.byy.ticket.event: INFO
+# 基础 TTL 为60秒，写入时仍叠加原有随机抖动，避免同一时刻集中失效。
+ticket:
+  event-cache:
+    ttl-ms: 60000

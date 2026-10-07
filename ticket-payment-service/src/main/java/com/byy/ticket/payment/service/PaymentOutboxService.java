@@ -1,6 +1,7 @@
 package com.byy.ticket.payment.service;
 
 import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.observability.TraceSupport;
 import com.byy.ticket.payment.mapper.OutboxEventMapper;
 import com.byy.ticket.payment.model.*;
 import com.byy.ticket.payment.mq.event.PaymentSucceededEvent;
@@ -15,11 +16,13 @@ import java.util.UUID;
 public class PaymentOutboxService {
     private final OutboxEventMapper events;
     private final ObjectMapper json;
+    private final TraceSupport traces;
 
     /** 注入本库Mapper与应用JSON转换器，保证载荷使用固定消息契约。 */
-    public PaymentOutboxService(OutboxEventMapper events, ObjectMapper json) {
+    public PaymentOutboxService(OutboxEventMapper events, ObjectMapper json, TraceSupport traces) {
         this.events = events;
         this.json = json;
+        this.traces = traces;
     }
 
     /** 必须加入已存在的付款事务；插入或序列化失败会使付款成功更新一起回滚。 */
@@ -35,6 +38,9 @@ public class PaymentOutboxService {
         event.setAggregateId(payment.getPaymentNo());
         event.setPayload(json.writeValueAsString(message));
         event.setTraceId(TraceIdContext.getOrCreate());
+        var context = traces.capture();
+        event.setTraceParent(context.traceParent());
+        event.setTraceState(context.traceState());
         event.setStatus("PENDING");
         event.setAttemptCount(0);
         event.setNextAttemptAt(payment.getPaidAt());

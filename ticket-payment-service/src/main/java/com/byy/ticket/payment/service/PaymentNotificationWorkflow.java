@@ -1,6 +1,7 @@
 package com.byy.ticket.payment.service;
 
-import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.observability.TraceSupport;
+import com.byy.ticket.payment.mapper.OutboxEventMapper;
 import com.byy.ticket.payment.client.OrderClient;
 import com.byy.ticket.payment.config.PaymentNotificationProperties;
 import com.byy.ticket.payment.mapper.PaymentMapper;
@@ -19,20 +20,21 @@ public class PaymentNotificationWorkflow {
     private final OrderClient orders;
     private final PaymentNotificationProperties properties;
     private final Clock clock;
+    private final TraceSupport traces;
+    private final OutboxEventMapper events;
 
     /** 注入本库持久化、远程通知客户端、退避配置与时钟。 */
     public PaymentNotificationWorkflow(PaymentMapper payments, OrderClient orders,
-            PaymentNotificationProperties properties, Clock clock) {
+            PaymentNotificationProperties properties, Clock clock, TraceSupport traces, OutboxEventMapper events) {
         this.payments = payments; this.orders = orders; this.properties = properties; this.clock = clock;
+        this.traces = traces; this.events = events;
     }
 
     /** 每条通知独立处理；一条失败不阻塞整批，线程复用时清理 trace。 */
     public void recoverDue() {
         for (Long id : payments.selectNotifyDue(properties.batchSize())) {
-            TraceIdContext.setOrCreate(null);
             try { advance(id); }
             catch (RuntimeException failure) { log.error("通知进度更新失败，租约到期后恢复，paymentId={}", id, failure); }
-            finally { TraceIdContext.clear(); }
         }
     }
 
@@ -42,9 +44,13 @@ public class PaymentNotificationWorkflow {
         if (payments.claimNotification(id, token, properties.leaseDuration().toNanos() / 1000) != 1) { return; }
         var payment = payments.selectById(id);
         if (payment == null || !token.equals(payment.getNotifyLeaseToken())) { return; }
+        var event=events.selectPaymentSucceeded(payment.getPaymentNo());
+        var parent=event==null?new TraceSupport.Snapshot(null,null):new TraceSupport.Snapshot(event.getTraceParent(),event.getTraceState());
+        try(var scope=traces.resume(parent,"payment.succeeded http notify",null)){
         try {
             orders.notifySuccess(payment.getOrderNo(), payment.getPaymentNo());
         } catch (RuntimeException failure) {
+            scope.error(failure);
             long factor = 1L << Math.min(Math.max(payment.getNotifyAttemptCount() - 1, 0), 10);
             long delay = Math.min(properties.retryMax().toMillis(), properties.retryBase().toMillis() * factor);
             // 不保存上游报文或可能含凭证的 URL，只保存异常类型。
@@ -54,6 +60,7 @@ public class PaymentNotificationWorkflow {
             return;
         }
         payments.finishNotification(id, token, "DELIVERED", now(), null);
+        }
     }
 
     /** 东八区、毫秒精度，与通知数据库保持一致。 */

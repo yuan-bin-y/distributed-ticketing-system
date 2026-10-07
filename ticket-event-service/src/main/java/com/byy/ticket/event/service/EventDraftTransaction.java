@@ -5,6 +5,7 @@ import com.byy.ticket.event.model.*;
 import com.byy.ticket.event.dto.event.EventDraftDTO;
 import com.byy.ticket.event.exception.EventConflictException;
 import com.byy.ticket.common.exception.ResourceNotFoundException;
+import com.byy.ticket.observability.TraceSupport;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.*;
@@ -16,7 +17,8 @@ public class EventDraftTransaction {
     private com.byy.ticket.event.cache.EventQueryCache cache;
     private final EventMapper events;private final EventSessionMapper sessions;private final TicketTierMapper tiers;
     private final PreparationMapper preparations;
-    public EventDraftTransaction(EventMapper events,EventSessionMapper sessions,TicketTierMapper tiers,PreparationMapper preparations){this.events=events;this.sessions=sessions;this.tiers=tiers;this.preparations=preparations;}
+    private final TraceSupport traces;
+    public EventDraftTransaction(EventMapper events,EventSessionMapper sessions,TicketTierMapper tiers,PreparationMapper preparations,TraceSupport traces){this.events=events;this.sessions=sessions;this.tiers=tiers;this.preparations=preparations;this.traces=traces;}
     /** 校验时间后保存完整草稿；任意票档失败时活动、场次和其他票档一起回滚。 */
     @Transactional
     public Long create(EventDraftDTO request,String hash){
@@ -26,6 +28,7 @@ public class EventDraftTransaction {
             if(!s.endTime().isAfter(s.startTime())||!s.saleEndTime().isAfter(s.saleStartTime())||s.saleEndTime().isAfter(s.startTime()))
                 throw new IllegalArgumentException("演出或开售时间区间无效");
         }
+        var context=traces.capture();
         var event=Event.builder().name(request.name()).category(request.category()).coverUrl(request.coverUrl()).description(request.description())
                 .status("DRAFT").creationKey(request.idempotencyKey()).creationHash(hash).build();events.insert(event);
         for(var s:request.sessions()){
@@ -33,6 +36,7 @@ public class EventDraftTransaction {
                     .startTime(s.startTime()).endTime(s.endTime()).saleStartTime(s.saleStartTime()).saleEndTime(s.saleEndTime()).purchaseLimit(s.purchaseLimit()).status("DRAFT").build();
             sessions.insert(session);
             for(var t:s.ticketTiers())tiers.insert(TicketTier.builder().sessionId(session.getId()).name(t.name()).price(t.price()).enabled(1)
+                    .traceParent(context.traceParent()).traceState(context.traceState())
                     .plannedQuantity(t.totalQuantity()).preparationStatus("PENDING").preparationAttempts(0).build());
         }
         return event.getId();

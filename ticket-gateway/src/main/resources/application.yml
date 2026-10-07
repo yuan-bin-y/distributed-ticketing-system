@@ -3,6 +3,8 @@ server:
   port: ${GATEWAY_PORT:8060}
 
 spring:
+  reactor:
+    context-propagation: auto
   application:
     name: ticket-gateway
   data:
@@ -14,6 +16,11 @@ spring:
       timeout: 2s
   cloud:
     nacos:
+      config:
+        # 激活nacos profile后再加载远程配置。
+        enabled: false
+        import-check:
+          enabled: false
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
     gateway:
@@ -64,3 +71,28 @@ ticket:
     jwk-set-uri: ${AUTH_JWK_SET_URI:http://127.0.0.1:8065/.well-known/jwks.json}
     jwk-timeout: 3s
     redis-prefix: "ticket:auth:"
+
+# 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  tracing:
+    propagation:
+      type: W3C
+    sampling:
+      probability: ${TICKET_TRACING_SAMPLE_RATE:0.1}
+    export:
+      otlp:
+        enabled: ${TICKET_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+    tracing:
+      export:
+        otlp:
+          transport: http
+          endpoint: ${TICKET_OTLP_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+          connect-timeout: 2s
+          timeout: 3s

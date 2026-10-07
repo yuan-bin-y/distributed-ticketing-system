@@ -1,0 +1,17 @@
+# 启用nacos profile：先加载公共配置，再加载服务配置；后者覆盖前者。
+spring:
+  config:
+    import:
+      - "nacos:${TICKET_COMMON_CONFIG_DATA_ID:ticket-common.yaml}?group=${NACOS_CONFIG_GROUP:${EVENT_CONFIG_GROUP:TICKET_GROUP}}&refreshEnabled=true"
+      - "nacos:${TICKET_SERVICE_CONFIG_DATA_ID:${EVENT_CONFIG_DATA_ID:ticket-event-service.yaml}}?group=${NACOS_CONFIG_GROUP:${EVENT_CONFIG_GROUP:TICKET_GROUP}}&refreshEnabled=true"
+  cloud:
+    nacos:
+      config:
+        enabled: true
+        import-check:
+          enabled: true
+        server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
+        # public用空ID，其他环境填写命名空间ID。
+        namespace: ${NACOS_CONFIG_NAMESPACE:}
+        username: ${NACOS_USERNAME:}
+        password: ${NACOS_PASSWORD:}

@@ -201,8 +201,12 @@ public class EventAdministrationVerification extends OrderAuthVerification {
             String fault=mode.get();
             var input=JSON.readTree(exchange.getRequestBody().readAllBytes());
             if(fault.equals("UNAVAILABLE")||fault.equals("SELECTIVE")&&input.path("ticketTierId").asLong()==blockedTier){send(exchange,503,"{}");return;}
-            var response=headers(inventoryPort,"POST","/internal/stocks/initializations",input,
-                    Map.of("X-Event-Inventory-Credential",exchange.getRequestHeaders().getFirst("X-Event-Inventory-Credential")));
+            var forwarded=new HashMap<String,String>();
+            forwarded.put("X-Event-Inventory-Credential",exchange.getRequestHeaders().getFirst("X-Event-Inventory-Credential"));
+            for(String key:List.of("traceparent","tracestate","X-Trace-Id")) {
+                String value=exchange.getRequestHeaders().getFirst(key);if(value!=null)forwarded.put(key,value);
+            }
+            var response=headers(inventoryPort,"POST","/internal/stocks/initializations",input,forwarded);
             if(fault.equals("LOST"))Thread.sleep(1200);
             String body=response.body();
             if(fault.equals("BAD_FACT"))body=body.replace("\"totalQuantity\":100","\"totalQuantity\":101");

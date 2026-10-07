@@ -8,8 +8,10 @@
     <file url="file://$PROJECT_DIR$/ticket-event-service/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ticket-gateway/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ticket-inventory-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/ticket-observability/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ticket-order-service/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ticket-payment-service/src/main/java" charset="UTF-8" />
+    <file url="file://$PROJECT_DIR$/ticket-resilience/src/main/java" charset="UTF-8" />
     <file url="file://$PROJECT_DIR$/ticket-security/src/main/java" charset="UTF-8" />
   </component>
 </project>

@@ -22,6 +22,11 @@ spring:
     validate-on-migrate: true
   cloud:
     nacos:
+      config:
+        # 激活 nacos profile 后启用，隔离验证和原本地启动保持可用。
+        enabled: false
+        import-check:
+          enabled: false
       discovery:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
@@ -55,3 +60,28 @@ ticket:
     service-id: ticket-inventory-service
     connect-timeout: 2s
     read-timeout: 3s
+
+# 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  tracing:
+    propagation:
+      type: W3C
+    sampling:
+      probability: ${TICKET_TRACING_SAMPLE_RATE:0.1}
+    export:
+      otlp:
+        enabled: ${TICKET_TRACING_EXPORT_ENABLED:false}
+  opentelemetry:
+    resource-attributes:
+      service.name: ${spring.application.name}
+    tracing:
+      export:
+        otlp:
+          transport: http
+          endpoint: ${TICKET_OTLP_ENDPOINT:http://127.0.0.1:4318/v1/traces}
+          connect-timeout: 2s
+          timeout: 3s

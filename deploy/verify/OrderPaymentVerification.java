@@ -94,9 +94,10 @@ public class OrderPaymentVerification {
         JsonNode sent=JSON.readTree(bodies.peek());
         check(sent.path("userId").asLong()==1&&sent.path("amount").decimalValue()
                 .compareTo(new java.math.BigDecimal("398.00"))==0,"remote payload comes from order snapshot");
-        check(traces.peek().equals(TRACE)&&first.headers().firstValue("X-Trace-Id").orElse("").equals(TRACE),
+        String actualTrace=first.headers().firstValue("X-Trace-Id").orElse("");
+        check(actualTrace.matches("[0-9a-f]{32}")&&actualTrace.equals(traces.peek()),
                 "trace propagated order to payment and response");
-        check(JSON.readTree(first.body()).path("traceId").asString().equals(TRACE),"Result trace propagated");
+        check(JSON.readTree(first.body()).path("traceId").asString().equals(actualTrace),"Result trace propagated");
         var repeated=post(orderPort,order,1L,null);
         check(data(repeated).path("paymentNo").asString().equals(number),"repeat returns original payment number");
         check(countPayment(order)==1&&orderStatus(order).equals("PENDING_PAYMENT"),"one payment and unchanged order");

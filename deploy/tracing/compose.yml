@@ -1,0 +1,34 @@
+name: ticket-tracing
+services:
+  tempo:
+    image: grafana/tempo:2.9.0
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "127.0.0.1:${TICKET_TEMPO_PORT:-3200}:3200"
+      - "127.0.0.1:${TICKET_OTLP_PORT:-4318}:4318"
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+  grafana:
+    image: grafana/grafana:13.2.2
+    ports:
+      - "127.0.0.1:${TICKET_GRAFANA_PORT:-3001}:3000"
+    environment:
+      # 本地学习环境只读浏览；独立实例和卷，避免影响已有 Grafana。
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [tempo]
+  rabbitmq-verification:
+    profiles: [verification]
+    image: rabbitmq:4.3.6-management
+    ports:
+      - "127.0.0.1:5679:5672"
+volumes:
+  tempo-data:
+  grafana-data:

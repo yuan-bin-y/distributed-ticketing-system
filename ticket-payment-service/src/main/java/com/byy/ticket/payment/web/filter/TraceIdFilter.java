@@ -1,6 +1,9 @@
 package com.byy.ticket.payment.web.filter;
 
 import com.byy.ticket.common.trace.TraceIdContext;
+import io.micrometer.tracing.Tracer;
+import org.springframework.beans.factory.ObjectProvider;
+import org.slf4j.MDC;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -19,11 +22,14 @@ import tools.jackson.databind.ObjectMapper;
  * 跨服务 Client 会继续把相同编号发到下游，便于关联整条调用链。
  */
 @Component
-@Order(Ordered.HIGHEST_PRECEDENCE)
+@Order(Ordered.HIGHEST_PRECEDENCE + 2)
 public class TraceIdFilter extends OncePerRequestFilter {
     private final ObjectMapper json;
+    private final ObjectProvider<Tracer> tracers;
     /** 注入JSON编码器处理Security层的会话存储故障。 */
-    public TraceIdFilter(ObjectMapper json) { this.json=json; }
+    public TraceIdFilter(ObjectMapper json, ObjectProvider<Tracer> tracers) {
+        this.json = json; this.tracers = tracers;
+    }
     /**
      * 读取请求中的 X-Trace-Id，校验或生成编号，再写入响应头。
      * 执行后续过滤器和 Controller；无论成功或异常，都在 finally 清理当前线程 MDC。
@@ -31,7 +37,11 @@ public class TraceIdFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
             throws ServletException, IOException {
-        String traceId = TraceIdContext.setOrCreate(request.getHeader(TraceIdContext.HTTP_HEADER));
+        String previous = MDC.get(TraceIdContext.MDC_KEY);
+        Tracer tracer = tracers.getIfAvailable();
+        var span = tracer == null ? null : tracer.currentSpan();
+        String traceId = TraceIdContext.setOrCreate(span == null
+                ? request.getHeader(TraceIdContext.HTTP_HEADER) : span.context().traceId());
         response.setHeader(TraceIdContext.HTTP_HEADER, traceId);
         try {
             chain.doFilter(request, response);
@@ -42,7 +52,8 @@ public class TraceIdFilter extends OncePerRequestFilter {
             response.setStatus(503);response.setContentType("application/json;charset=UTF-8");
             json.writeValue(response.getWriter(),Result.failure(ApiErrorCode.SERVICE_BUSY,"登录会话存储暂时不可用"));
         } finally {
-            TraceIdContext.clear();
+            if (previous == null) TraceIdContext.clear();
+            else MDC.put(TraceIdContext.MDC_KEY, previous);
         }
     }
 }

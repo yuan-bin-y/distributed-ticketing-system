@@ -142,7 +142,9 @@ public class PaymentMqVerification extends PaymentFulfillmentVerification {
             mq.queueDeclare(toolPrefix+".order.payment-dead",true,false,false,Map.of("x-queue-type","quorum"));
             mq.queueDeclare(toolPrefix+".order.payment-succeeded",true,false,false,Map.of("x-queue-type","quorum"));
             mq.queueBind(toolPrefix+".order.payment-succeeded",toolPrefix+".payment.exchange","payment.succeeded");
+            String preservedParent="00-"+newNo()+"-1234567890abcdef-01";
             mq.basicPublish("",toolPrefix+".order.payment-dead",new AMQP.BasicProperties.Builder()
+                    .headers(Map.of("traceparent",preservedParent,"tracestate","ticket=replay"))
                     .deliveryMode(2).messageId(newNo()).build(),"{}".getBytes(StandardCharsets.UTF_8));
             mq.waitForConfirmsOrDie(5000);
             for(boolean replay:List.of(false,true)) {
@@ -157,6 +159,12 @@ public class PaymentMqVerification extends PaymentFulfillmentVerification {
                         replay?"confirmed replay removes source dead letter":"preview retains source dead letter");
             }
             check(mq.messageCount(toolPrefix+".order.payment-succeeded")==1,"replay publishes one retained original message");
+            var replayed=mq.basicGet(toolPrefix+".order.payment-succeeded",false);
+            check(preservedParent.equals(replayed.getProps().getHeaders().get("traceparent").toString()),
+                    "dead-letter tool preserves standard parent context");
+            check("ticket=replay".equals(replayed.getProps().getHeaders().get("tracestate").toString()),
+                    "dead-letter tool preserves tracestate");
+            mq.basicNack(replayed.getEnvelope().getDeliveryTag(),false,true);
         }finally {
             mq.queueDelete(toolPrefix+".order.payment-dead");
             mq.queueDelete(toolPrefix+".order.payment-succeeded");

@@ -1,0 +1,10 @@
+logging:
+  level:
+    com.byy.ticket.order: INFO
+# 保护器在启动时创建，修改后重启Order。
+ticket:
+  http-resilience:
+    inventory:
+      concurrency: 20
+    payment:
+      concurrency: 20

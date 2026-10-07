@@ -29,6 +29,13 @@ public class PaymentDeadLetterReplay {
             if(delivery.getProps().getHeaders()!=null){
                 Object trace=delivery.getProps().getHeaders().get("X-Trace-Id");
                 if(trace!=null)headers.put("X-Trace-Id",trace);
+                for(String key:List.of("traceparent","tracestate")) {
+                    Object context=delivery.getProps().getHeaders().get(key);
+                    // 原生 RabbitMQ 客户端收到的是 LongString，不能只识别 Java String。
+                    if(context instanceof LongString value && value.length()<=512)
+                        context=new String(value.getBytes(),StandardCharsets.UTF_8);
+                    if(context instanceof String value && value.length()<=512) headers.put(key,value);
+                }
             }
             headers.put("x-ticket-retry",0);
             headers.put("x-ticket-redrive",true);

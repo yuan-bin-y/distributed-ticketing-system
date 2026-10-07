@@ -2,6 +2,7 @@ package com.byy.ticket.order.service;
 
 import com.byy.ticket.order.client.dto.TicketPurchaseRuleResponse;
 import com.byy.ticket.common.trace.PerformanceSpan;
+import com.byy.ticket.observability.TraceSupport;
 import com.byy.ticket.order.dto.order.OrderCreateDTO;
 import com.byy.ticket.order.mapper.OrderMapper;
 import com.byy.ticket.order.mapper.OrderItemMapper;
@@ -22,12 +23,14 @@ public class OrderTransactionService {
     private final OrderMapper orders;
     private final OrderItemMapper items;
     private final PurchaseQuotaMapper quotas;
+    private final TraceSupport traces;
 
     /** 注入属于订单库的订单、快照和购买额度Mapper。 */
-    public OrderTransactionService(OrderMapper orders, OrderItemMapper items, PurchaseQuotaMapper quotas) {
+    public OrderTransactionService(OrderMapper orders, OrderItemMapper items, PurchaseQuotaMapper quotas, TraceSupport traces) {
         this.orders = orders;
         this.items = items;
         this.quotas = quotas;
+        this.traces = traces;
     }
 
     /** 原子保存订单、快照及累计额度；超过限购全部回滚，重复幂等键不再占额度。 */
@@ -36,6 +39,9 @@ public class OrderTransactionService {
                               BigDecimal amount, LocalDateTime now, LocalDateTime expiresAt) {
         TicketOrder order = new TicketOrder();
         order.setOrderNo(UUID.randomUUID().toString().replace("-", ""));
+        var context = traces.capture();
+        order.setTraceParent(context.traceParent());
+        order.setTraceState(context.traceState());
         order.setUserId(userId);
         order.setIdempotencyKey(request.idempotencyKey());
         order.setTotalAmount(amount);

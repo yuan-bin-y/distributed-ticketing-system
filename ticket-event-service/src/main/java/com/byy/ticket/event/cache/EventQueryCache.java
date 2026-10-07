@@ -23,19 +23,19 @@ public class EventQueryCache {
         "if redis.call('get',KEYS[1])==ARGV[1] then return redis.call('del',KEYS[1]) end; return 0",Long.class);
     private final StringRedisTemplate redis; private final ObjectMapper json;
     private final boolean enabled; private final String prefix;
-    private final long ttlMs,waitMs,leaseMs; private final Semaphore database;
+    private final EventCacheTtl ttl; private final long waitMs,leaseMs; private final Semaphore database;
     public final LongAdder hits=new LongAdder(),loads=new LongAdder(),waits=new LongAdder(),
         failures=new LongAdder(),busy=new LongAdder();
     public EventQueryCache(StringRedisTemplate redis,ObjectMapper json,
         @Value("${ticket.event-cache.enabled:true}") boolean enabled,
         @Value("${ticket.event-cache.prefix:ticket:{event-cache}:}") String prefix,
-        @Value("${ticket.event-cache.ttl-ms:60000}") long ttlMs,
+        EventCacheTtl ttl,
         @Value("${ticket.event-cache.wait-ms:1500}") long waitMs,
         @Value("${ticket.event-cache.lease-ms:8000}") long leaseMs,
         @Value("${ticket.event-cache.database-concurrency:16}") int concurrency) {
-        if(ttlMs<100||waitMs<1||leaseMs<100||concurrency<1)throw new IllegalArgumentException("缓存配置不合法");
+        if(waitMs<1||leaseMs<100||concurrency<1)throw new IllegalArgumentException("缓存配置不合法");
         this.redis=redis;this.json=json;this.enabled=enabled;this.prefix=prefix;
-        this.ttlMs=ttlMs;this.waitMs=waitMs;this.leaseMs=leaseMs;database=new Semaphore(concurrency);
+        this.ttl=ttl;this.waitMs=waitMs;this.leaseMs=leaseMs;database=new Semaphore(concurrency);
     }
     /** 缓存开关关闭、深页查询或Redis故障时仍执行数据库并发保护。 */
     public <T> T uncached(Supplier<T> loader){return load(loader);}
@@ -70,6 +70,8 @@ public class EventQueryCache {
                     T value;
                     try{value=load(loader);}
                     catch(ResourceNotFoundException missing){save(lock,key,token,"null",5000);throw missing;}
+                    // 每次写入读取同一个TTL快照；已有缓存和固定空结果TTL不变。
+                    long ttlMs=ttl.millis();
                     save(lock,key,token,json.writeValueAsString(value),
                          ttlMs+ThreadLocalRandom.current().nextLong(Math.max(1,ttlMs/5)));
                     return value;

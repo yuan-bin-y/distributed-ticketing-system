@@ -17,6 +17,10 @@
 
 ## 第二版进度
 
+已加入[六服务Nacos配置中心与动态刷新](docs/nacos-config.md)：启用 `nacos` profile 后加载公共与服务专属配置，支持日志级别及Event缓存TTL动态生效。其他启动快照参数明确标注为重启生效；六服务配置90项、真实Nacos/Redis的TTL刷新与回滚21项检查通过。
+
+已接通 [全项目分布式追踪](docs/http-tracing.md)：六服务 HTTP、支付 Outbox、MQ 发布/消费、重试与后台库存确认及出票均可关联到 Tempo，Grafana 展示真实父子调用与耗时。完整链路561项、MQ追踪与故障226项检查通过；开启方式与代码入口见文档。
+
 已接通[支付MQ与订单消费](docs/payment-mq.md)：付款成功与[Outbox事件](docs/payment-outbox.md)同事务保存，发送器等待Confirm并检查Return；订单回查付款事实，消费记录与付款依据同事务提交后ACK。支持延迟重试、死信查看及确认重投。默认保留HTTP模式，设置 `TICKET_MQ_ENABLED=true` 开启MQ链路。
 
 已加入[活动缓存、热点重建与网关限流](docs/event-cache-rate-limit.md)：展示查询缓存、跨实例重建锁、发布提交后失效、受控回源，以及响应式 Redis 令牌桶。缓存和限流默认启用；[压测记录](docs/performance/cache-rate-2026-10-07.md)包含查询次数、延迟和限流结果。
@@ -38,6 +42,7 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 | ticket-common | 不启动 | Result、异常、traceId等基础支持 |
 | ticket-resilience | 不启动 | 通用HTTP熔断、并发隔离与策略绑定 |
 | ticket-security | 不启动 | 用户认证与服务凭证支持 |
+| ticket-observability | 不启动 | 标准追踪上下文捕获、持久化恢复及异步 Span 支持 |
 
 第一版五个独立业务库共12张业务表；当前第二版新增支付Outbox和订单消费记录，共14张业务表，另有各库Flyway迁移历史表。服务只访问自己的库，通过HTTP协作；启用MQ时付款通知使用RabbitMQ。Gateway采用WebFlux，业务服务采用Spring MVC。
 
@@ -74,4 +79,4 @@ Java 17、Spring Boot 4.0.8、Spring Cloud 2025.1.3、Spring Cloud Alibaba 2025.
 
 第一版通过API演示，没有业务前端；支付与冲正为模拟，电子票没有入场核验。管理员支持创建完整草稿、查看准备、原参数重新准备和发布，暂不支持编辑已初始化参数、下架或调整库存。
 
-一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿，支付MQ链路使用Outbox与消费幂等。Nacos配置中心及多机容量验证列入后续学习计划。
+一致性使用各服务本地事务、持久化进度、幂等、核对、重试与补偿，支付MQ链路使用Outbox与消费幂等。Nacos配置中心已接入；多实例故障与多机容量验证留待后续。

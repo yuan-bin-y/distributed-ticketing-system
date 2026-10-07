@@ -29,6 +29,9 @@ public class TicketTier {
      * 所属场次 ID，跨服务传递时作为业务标识。
      */
     private Long sessionId;
+    /** 创建草稿请求的标准上下文，供后台初始化库存恢复。 */
+    private String traceParent;
+    private String traceState;
     /**
      * 当前活动、场次或票档的名称。
      */

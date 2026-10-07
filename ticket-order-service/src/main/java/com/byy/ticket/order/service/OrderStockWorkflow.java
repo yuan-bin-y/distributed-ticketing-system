@@ -1,7 +1,7 @@
 package com.byy.ticket.order.service;
 
 import com.byy.ticket.common.exception.ResourceNotFoundException;
-import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.observability.TraceSupport;
 import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.dto.StockReservationRequest;
@@ -36,11 +36,12 @@ public class OrderStockWorkflow {
     private final OrderPaymentFulfillment fulfillment;
     private final OrderTicketIssueTransaction ticketIssue;
     private final OrderTransactionService transactions;
+    private final TraceSupport traces;
 
     /** 注入订单持久化、库存客户端、付款履约步骤、出票事务、配置和业务时钟。 */
     public OrderStockWorkflow(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
                               OrderWorkflowProperties properties, Clock clock, OrderPaymentFulfillment fulfillment,
-                              OrderTicketIssueTransaction ticketIssue, OrderTransactionService transactions) {
+                              OrderTicketIssueTransaction ticketIssue, OrderTransactionService transactions, TraceSupport traces) {
         this.orders = orders;
         this.items = items;
         this.inventory = inventory;
@@ -49,19 +50,16 @@ public class OrderStockWorkflow {
         this.fulfillment = fulfillment;
         this.ticketIssue = ticketIssue;
         this.transactions = transactions;
+        this.traces = traces;
     }
 
     /** 按截止时间限量扫描，单条失败不会阻断后续订单；多实例再通过 claim 竞争领取。 */
     public void recoverDue() {
         for (Long id : orders.selectDue(properties.batchSize())) {
-            TraceIdContext.setOrCreate(null);
-            try { advance(id); }
-            catch (RuntimeException exception) {
-                log.error("订单恢复失败，orderId={}；租约到期后可继续领取", id, exception);
-            } finally {
-                // 调度线程会复用，每张订单使用独立 traceId，完成后清理。
-                TraceIdContext.clear();
-            }
+                try { advance(id); }
+                catch (RuntimeException exception) {
+                    log.error("订单恢复失败，orderId={}；租约到期后可继续领取", id, exception);
+                }
         }
     }
 
@@ -71,30 +69,37 @@ public class OrderStockWorkflow {
         if (PerformanceSpan.measure("workflow.claim",()->orders.claim(id, token, properties.leaseDuration().toNanos() / 1000)) != 1) { return; }
         TicketOrder order = PerformanceSpan.measure("workflow.lookup",()->orders.selectById(id));
         if (order == null || !token.equals(order.getLeaseToken())) { return; }
-        try {
-            if (OrderStatus.STOCK_PENDING.name().equals(order.getStatus())) {
-                reserve(order, token);
-            } else if (OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
-                fulfillment.confirm(order, token);
-            } else if (OrderStatus.REVERSAL_PENDING.name().equals(order.getStatus())) {
-                fulfillment.reverse(order, token);
-            } else if (OrderStatus.PAID.name().equals(order.getStatus())) {
-                ticketIssue.issue(id,token);
-            } else {
-                close(order, token);
-            }
-        } catch (IllegalArgumentException | ResourceNotFoundException exception) {
-            rejectOrRetry(order, token, exception);
-        } catch (InventoryServiceCallException exception) {
-            if (exception.getReason() == InventoryServiceCallException.Reason.CONFLICT
-                    && !OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
+        // 恢复持久化的业务因果上下文；每次领取独立 Span，不借用调度任务的 Trace。
+        try (var scope = traces.resume(new TraceSupport.Snapshot(order.getTraceParent(), order.getTraceState()),
+                "order.workflow " + order.getStatus().toLowerCase(java.util.Locale.ROOT), null)) {
+            try {
+                if (OrderStatus.STOCK_PENDING.name().equals(order.getStatus())) {
+                    reserve(order, token);
+                } else if (OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
+                    fulfillment.confirm(order, token);
+                } else if (OrderStatus.REVERSAL_PENDING.name().equals(order.getStatus())) {
+                    fulfillment.reverse(order, token);
+                } else if (OrderStatus.PAID.name().equals(order.getStatus())) {
+                    ticketIssue.issue(id,token);
+                } else {
+                    close(order, token);
+                }
+            } catch (IllegalArgumentException | ResourceNotFoundException exception) {
+                scope.error(exception);
                 rejectOrRetry(order, token, exception);
-            } else {
+            } catch (InventoryServiceCallException exception) {
+                scope.error(exception);
+                if (exception.getReason() == InventoryServiceCallException.Reason.CONFLICT
+                        && !OrderStatus.PAYMENT_CONFIRMING.name().equals(order.getStatus())) {
+                    rejectOrRetry(order, token, exception);
+                } else {
+                    retry(order, token, exception);
+                }
+            } catch (RuntimeException exception) {
+                scope.error(exception);
+                // DB 更新失败也不能推断库存未执行；保留或延后原步骤，进程崩溃则靠租约恢复。
                 retry(order, token, exception);
             }
-        } catch (RuntimeException exception) {
-            // DB 更新失败也不能推断库存未执行；保留或延后原步骤，进程崩溃则靠租约恢复。
-            retry(order, token, exception);
         }
     }
 

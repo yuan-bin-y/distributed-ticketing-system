@@ -12,6 +12,9 @@ import java.util.List;
 /** 订单查询与状态更新；任务领取和完成都用条件 SQL，协调多个订单实例。 */
 @Mapper
 public interface OrderMapper extends BaseMapper<TicketOrder> {
+    /** 在持有订单行锁的付款接收事务中保存首次接收上下文，供后台履约恢复。 */
+    @Update("UPDATE t_order SET trace_parent=#{parent}, trace_state=#{state} WHERE id=#{id}")
+    int saveTraceContext(@Param("id") Long id, @Param("parent") String parent, @Param("state") String state);
     /** 订单行已锁定后标记已归还，与额度减法及订单终态在同一个事务中完成。 */
     @Update("UPDATE t_order SET quota_status='RELEASED' WHERE id=#{id} AND quota_status='HELD'")
     int markQuotaReleased(@Param("id") Long id);

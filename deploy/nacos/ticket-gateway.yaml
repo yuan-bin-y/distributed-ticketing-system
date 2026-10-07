@@ -1,0 +1,14 @@
+logging:
+  level:
+    com.byy.ticket.gateway: INFO
+# 令牌桶参数当前在启动时构造，修改后重启Gateway。
+ticket:
+  rate-limit:
+    event-rate: 200
+    event-burst: 400
+    event-client-rate: 20
+    event-client-burst: 40
+    order-rate: 100
+    order-burst: 200
+    order-client-rate: 5
+    order-client-burst: 10

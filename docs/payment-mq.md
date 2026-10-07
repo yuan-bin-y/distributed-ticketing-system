@@ -95,6 +95,8 @@ SELECT * FROM t_consumed_event ORDER BY consumed_at DESC LIMIT 20;
 
 ## 验证方法
 
+MQ 已接入[完整分布式追踪](http-tracing.md)。Outbox 在付款事务中保存标准上下文，发送器创建 PRODUCER Span 并注入消息头，Order 创建 CONSUMER Span；延迟重试与死信重投保留 `traceparent` / `tracestate`。追踪模式 `verify_payment_mq.ps1 -Tracing` 通过226项检查，覆盖真实Tempo中的父子关系及原MQ故障场景。
+
 本次真实RabbitMQ验证通过80项检查，支付本地事务与Outbox验证通过118项，原HTTP履约回归通过137项。MQ测试使用独立5679端口节点，业务服务使用随机端口；应用正常配置默认仍为5672。
 
 先构建Order、Payment、Inventory及其依赖，运行 `deploy/verify/verify_payment_mq.ps1`。脚本使用实际RabbitMQ连接、随机数据库和唯一队列前缀，结束清理测试资源，不启动或停止用户的Broker。

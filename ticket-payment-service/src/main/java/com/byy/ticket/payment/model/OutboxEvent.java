@@ -23,6 +23,9 @@ public class OutboxEvent {
     private String payload;
     /** 原付款请求追踪编号，后台线程可据此恢复日志关联。 */
     private String traceId;
+    /** 原请求标准上下文，发布器为每次尝试建立其子 Span。 */
+    private String traceParent;
+    private String traceState;
     /** PENDING、SENDING、PUBLISHED或REVIEW_REQUIRED；当前阶段仅创建PENDING。 */
     private String status;
     /** 发布尝试次数，当前初始为零。 */

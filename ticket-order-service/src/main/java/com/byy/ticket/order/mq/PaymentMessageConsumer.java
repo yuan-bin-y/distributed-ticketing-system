@@ -1,6 +1,8 @@
 package com.byy.ticket.order.mq;
 
 import com.byy.ticket.common.trace.TraceIdContext;
+import com.byy.ticket.observability.TraceSupport;
+import io.micrometer.tracing.Span;
 import com.byy.ticket.order.client.PaymentClient;
 import com.byy.ticket.order.client.exception.PaymentServiceCallException;
 import com.byy.ticket.order.exception.OrderConflictException;
@@ -28,17 +30,20 @@ public class PaymentMessageConsumer {
     private final PaymentMessageTransaction transaction;
     private final RabbitTemplate rabbit;
     private final String exchange;
+    private final TraceSupport traces;
     public PaymentMessageConsumer(ObjectMapper json,PaymentClient payments,PaymentMessageTransaction transaction,
-                                  RabbitTemplate rabbit,@Value("${ticket.mq.prefix:ticket}") String prefix) {
+                                  RabbitTemplate rabbit,@Value("${ticket.mq.prefix:ticket}") String prefix, TraceSupport traces) {
         this.json=json;this.payments=payments;this.transaction=transaction;
         this.rabbit=rabbit;this.exchange=prefix+".payment.exchange";
+        this.traces=traces;
     }
     @RabbitListener(queues="${ticket.mq.prefix:ticket}.order.payment-succeeded",ackMode="MANUAL")
     public void consume(Message message,Channel channel) throws Exception {
         long tag=message.getMessageProperties().getDeliveryTag();
-        Object trace=message.getMessageProperties().getHeaders().get("X-Trace-Id");
-        TraceIdContext.setOrCreate(trace instanceof String ? (String)trace : null);
-        try {
+        try (var scope=traces.resume(TraceSupport.Snapshot.from(message.getMessageProperties().getHeaders()),
+                "payment.succeeded consume", Span.Kind.CONSUMER)) {
+            scope.tag("messaging.system", "rabbitmq");
+            scope.tag("messaging.destination.name", message.getMessageProperties().getConsumerQueue());
             try {
                 if(message.getBody().length>16384) throw new IllegalArgumentException("支付消息过大");
                 PaymentSucceededMessage event;
@@ -56,6 +61,7 @@ public class PaymentMessageConsumer {
                 var fact=payments.getByOrder(event.orderNo());
                 transaction.accept(event,hash,fact);
             } catch(Exception failure) {
+                scope.error(failure);
                 try {
                     forwardFailure(message,failure);
                 } catch(Exception forwardingFailure) {
@@ -67,11 +73,20 @@ public class PaymentMessageConsumer {
                     return;
                 }
             }
-            channel.basicAck(tag,false);
-        } finally { TraceIdContext.clear(); }
+            try { channel.basicAck(tag,false); }
+            catch (Exception failure) { scope.error(failure); throw failure; }
+        }
     }
     /** 三档临时重试后进入死信；转发失败抛出，由容器保留并重新投递原消息。 */
     private void forwardFailure(Message original,Exception failure) throws Exception {
+        // 重试和死信转发建立 Producer 子 Span；下次投递成为新的 Consumer 子 Span。
+        try (var scope=traces.resume(traces.capture(), "payment.succeeded retry publish", Span.Kind.PRODUCER)) {
+            scope.tag("messaging.system", "rabbitmq");
+            try { sendFailure(original, failure); }
+            catch (Exception problem) { scope.error(problem); throw problem; }
+        }
+    }
+    private void sendFailure(Message original,Exception failure) throws Exception {
         Object value=original.getMessageProperties().getHeaders().get("x-ticket-retry");
         int retry=value instanceof Number ? ((Number)value).intValue() : 0;
         if(retry<0 || retry>3) retry=3;
@@ -88,6 +103,7 @@ public class PaymentMessageConsumer {
         properties.setDeliveryMode(MessageDeliveryMode.PERSISTENT);
         properties.setMessageId(original.getMessageProperties().getMessageId());
         properties.setHeader("X-Trace-Id",TraceIdContext.getOrCreate());
+        traces.inject(properties.getHeaders());
         properties.setHeader("x-ticket-retry",retry+1);
         properties.setHeader("x-ticket-error",failure.getClass().getSimpleName());
         var correlation=new CorrelationData(java.util.UUID.randomUUID().toString());

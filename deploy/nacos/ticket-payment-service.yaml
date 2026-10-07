@@ -1,0 +1,8 @@
+logging:
+  level:
+    com.byy.ticket.payment: INFO
+# 保护器在启动时创建，修改后重启Payment。
+ticket:
+  http-resilience:
+    order:
+      concurrency: 20
