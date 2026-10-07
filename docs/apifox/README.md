@@ -17,9 +17,9 @@
 
 ## 本地环境
 
-按 [第一版启动指南](../v1-startup.md) 启动 MySQL、Redis、Nacos 及六个服务。Payment 的 `PAYMENT_SIMULATION_ENABLED=true` 只用于本地模拟。Auth 初始化管理员账号后，使用自己的账号密码登录。
+按 [Docker 启动指南](../docker-deployment.md) 启动中间件和六个服务。Payment 的 `PAYMENT_SIMULATION_ENABLED=true` 只用于本地模拟。Auth 初始化管理员账号后，使用自己的账号密码登录。
 
-在 Apifox 创建“本地网关”环境，前置 URL 为 `http://localhost:8060`。配置以下变量，Token 和实际密码填在本地值中：
+在 Apifox 创建“本地网关”环境，Docker 部署的前置 URL 为 `http://localhost:18060`；IDEA 启动时为 `http://localhost:8060`。静态文档中的 806x 是业务默认端口，Docker 内部接口调试需改为对应宿主机端口：Event 18061、Inventory 18063、Payment 18064、Auth 18065；Order 内部接口仅在 Compose 网络中可达，不映射到宿主机。日常交易调试使用网关公开接口。配置以下变量，Token 和实际密码填在本地值中：
 
 | 变量 | 初始内容 | 来源 |
 | --- | --- | --- |

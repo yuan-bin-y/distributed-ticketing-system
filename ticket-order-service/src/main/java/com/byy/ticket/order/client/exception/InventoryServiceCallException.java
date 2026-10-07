@@ -15,6 +15,11 @@ public class InventoryServiceCallException extends RuntimeException {
         exception.circuitBreakerFailure=false; return exception;
     }
     public boolean isCircuitBreakerFailure() { return circuitBreakerFailure; }
+    /** 票档额度满仅让原订单稍后重试，不计入整个库存服务的健康失败率。 */
+    public static InventoryServiceCallException capacityRejected() {
+        var exception=new InventoryServiceCallException(Reason.UNAVAILABLE,"热点库存准入满额，请保留原订单稍后重试");
+        exception.circuitBreakerFailure=false;return exception;
+    }
 
     /**
      * 保存失败类别和可返回给调用方的提示。

@@ -1,0 +1,53 @@
+groups:
+  - name: ticket-platform
+    rules:
+      - alert: TicketServiceUnavailable
+        expr: up{job="ticket-services"} == 0
+        for: 30s
+        labels: {severity: critical}
+        annotations: {summary: "服务指标端点不可访问：{{ $labels.service }} / {{ $labels.instance }}"}
+      - alert: TicketServiceDiscoveryMissing
+        expr: count(count by (service) (up{job="ticket-services"})) < 6 or absent(up{job="ticket-services"})
+        for: 30s
+        labels: {severity: critical}
+        annotations: {summary: "服务发现不足六种服务，检查容器及DNS"}
+      - alert: TicketHttpErrors
+        expr: sum by (application) (rate(http_server_requests_seconds_count{status=~"5.."}[2m])) / clamp_min(sum by (application) (rate(http_server_requests_seconds_count[2m])), 0.01) > 0.05
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "服务5xx比例超过5%：{{ $labels.application }}"}
+      - alert: TicketRecoveryStalled
+        expr: ticket_workflow_oldest_seconds{workflow=~"order_recovery|payment_outbox|event_preparation"} > 60
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: "工作流积压超过60秒：{{ $labels.workflow }}"}
+      - alert: TicketManualReviewRequired
+        expr: ticket_workflow_pending{workflow=~"order_review|event_review"} > 0
+        for: 10s
+        labels: {severity: warning}
+        annotations: {summary: "存在需要人工核对的业务记录：{{ $labels.workflow }}"}
+      - alert: TicketMetricsCollectorFailed
+        expr: ticket_workflow_collector_healthy == 0 or time() - ticket_workflow_collector_sampled_timestamp_seconds > 40
+        for: 20s
+        labels: {severity: warning}
+        annotations: {summary: "业务指标采样失败或过期：{{ $labels.application }}"}
+      - alert: TicketInventoryAdmissionUnavailable
+        expr: increase(ticket_inventory_admission_total{outcome="redis_error"}[1m]) > 0
+        for: 10s
+        labels: {severity: warning}
+        annotations: {summary: "Redis库存准入故障，订单将按原编号恢复"}
+      - alert: TicketPaymentDeadLetters
+        expr: ticket_mq_queue_messages{queue="dead"} > 0
+        for: 10s
+        labels: {severity: warning}
+        annotations: {summary: "支付消息进入死信，请核对后使用现有重放工具"}
+      - alert: TicketPaymentQueueBacklog
+        expr: ticket_mq_queue_messages{queue="payment"} > 100
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "支付消息队列积压超过100条"}
+      - alert: TicketMqMetricsCollectorFailed
+        expr: ticket_mq_collector_healthy == 0
+        for: 20s
+        labels: {severity: warning}
+        annotations: {summary: "支付队列指标读取失败"}

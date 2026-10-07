@@ -38,10 +38,19 @@ ticket:
     redis-prefix: "ticket:auth:"
 # 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
 management:
+  server:
+    port: ${TICKET_MANAGEMENT_PORT:-1}
+    address: ${TICKET_MANAGEMENT_ADDRESS:127.0.0.1}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   tracing:
     propagation:
       type: W3C

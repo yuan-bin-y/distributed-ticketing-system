@@ -1,0 +1,300 @@
+name: ${TICKET_DOCKER_PROJECT:-ticket-platform}
+
+# 所有地址都是Compose网络内的服务名，容器间使用容器端口。
+x-app-env: &app-env
+  JAVA_TOOL_OPTIONS: "-Xms64m -Xmx384m -Duser.timezone=Asia/Shanghai -Duser.home=/tmp"
+  TZ: Asia/Shanghai
+  LOCAL_MYSQL_USERNAME: root
+  LOCAL_MYSQL_PASSWORD: "${LOCAL_MYSQL_PASSWORD:?请运行deploy/docker/start.ps1加载已有Windows变量}"
+  LOCAL_REDIS_HOST: redis
+  LOCAL_REDIS_PORT: "6379"
+  LOCAL_REDIS_PASSWORD: ""
+  NACOS_SERVER_ADDR: nacos:8848
+  SPRING_CLOUD_NACOS_DISCOVERY_GROUP: TICKET_DOCKER
+  SPRING_PROFILES_ACTIVE: nacos
+  NACOS_CONFIG_GROUP: TICKET_DOCKER
+  AUTH_JWK_SET_URI: http://auth:8065/.well-known/jwks.json
+  TICKET_MQ_PREFIX: ticket-docker
+  TICKET_TRACING_EXPORT_ENABLED: "true"
+  TICKET_TRACING_SAMPLE_RATE: "${TICKET_TRACING_SAMPLE_RATE:-1.0}"
+  TICKET_OTLP_ENDPOINT: http://tempo:4318/v1/traces
+  # 本阶段Tempo只收Trace，不把OTLP metrics发到不存在的接收端。
+  MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+  TICKET_MANAGEMENT_PORT: "9000"
+  TICKET_MANAGEMENT_ADDRESS: "0.0.0.0"
+  TICKET_WORKFLOW_METRICS_ENABLED: "true"
+  TICKET_WORKFLOW_METRICS_INTERVAL_MS: "10000"
+  INVENTORY_HOT_STOCK_ENABLED: "true"
+  INVENTORY_HOT_STOCK_PREFIX: "ticket-docker:hot-stock:"
+
+x-app: &app
+  pull_policy: never
+  restart: unless-stopped
+  init: true
+  stop_grace_period: 30s
+
+x-ready: &ready
+  interval: 5s
+  timeout: 5s
+  retries: 36
+  start_period: 30s
+
+x-base-dependencies: &base-dependencies
+  mysql: {condition: service_healthy}
+  redis: {condition: service_healthy}
+  nacos: {condition: service_healthy}
+  seed-configs: {condition: service_completed_successfully}
+
+services:
+  mysql:
+    image: mysql:8.0
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${LOCAL_MYSQL_PASSWORD:?数据库密码未加载}"
+      MYSQL_ROOT_HOST: "%"
+      TZ: Asia/Shanghai
+    ports: ["127.0.0.1:${TICKET_MYSQL_PORT:-13306}:3306"]
+    volumes: ["mysql-data:/var/lib/mysql"]
+    healthcheck:
+      <<: *ready
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysql --protocol=tcp -h 127.0.0.1 -u root -e 'SELECT 1' >/dev/null 2>&1"]
+
+  redis:
+    image: redis:7.4-alpine
+    pull_policy: never
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports: ["127.0.0.1:${TICKET_REDIS_PORT:-16379}:6379"]
+    volumes: ["redis-data:/data"]
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "redis-cli", "ping"]
+
+  rabbitmq:
+    image: rabbitmq:4.3.6-management
+    pull_policy: never
+    restart: unless-stopped
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: ticket
+      RABBITMQ_DEFAULT_PASS: "${TICKET_DOCKER_RABBITMQ_PASSWORD:?请运行启动脚本准备RabbitMQ密码}"
+    ports:
+      - "127.0.0.1:${TICKET_RABBITMQ_PORT:-15679}:5672"
+      - "127.0.0.1:${TICKET_RABBITMQ_CONSOLE_PORT:-15680}:15672"
+    volumes: ["rabbitmq-data:/var/lib/rabbitmq"]
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+
+  nacos:
+    image: ticket-nacos:3.1.2-local
+    pull_policy: never
+    build:
+      context: ./.local/docker/nacos
+      dockerfile: ../../../deploy/docker/nacos/Dockerfile
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    ports:
+      - "127.0.0.1:${TICKET_NACOS_CONSOLE_PORT:-18080}:8080"
+      - "127.0.0.1:${TICKET_NACOS_PORT:-18848}:8848"
+      - "127.0.0.1:${TICKET_NACOS_GRPC_PORT:-19848}:9848"
+    volumes:
+      - nacos-data:/opt/nacos/data
+      - nacos-logs:/opt/nacos/logs
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8848/nacos/v3/admin/core/state/readiness"]
+
+  seed-configs:
+    image: eclipse-temurin:17-jre-jammy
+    pull_policy: never
+    entrypoint: ["bash", "/scripts/seed-nacos.sh"]
+    volumes:
+      - ./deploy/docker/seed-nacos.sh:/scripts/seed-nacos.sh:ro
+      - ./deploy/nacos:/configs:ro
+    depends_on:
+      nacos: {condition: service_healthy}
+
+  auth:
+    <<: *app
+    image: ticket-auth-service:local
+    build: {context: ./ticket-auth-service}
+    ports: ["127.0.0.1:${TICKET_AUTH_PORT:-18065}:8065"]
+    environment:
+      <<: *app-env
+      AUTH_DB_URL: "jdbc:mysql://mysql:3306/ticket_auth?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true"
+      AUTH_JWT_PRIVATE_KEY_PATH: /run/secrets/auth-private-key
+      AUTH_JWT_PUBLIC_KEY_PATH: /run/secrets/auth-public-key
+      AUTH_BOOTSTRAP_ADMIN_USERNAME: "${TICKET_DOCKER_ADMIN_USERNAME:-docker_admin}"
+      AUTH_BOOTSTRAP_ADMIN_PASSWORD: "${TICKET_DOCKER_ADMIN_PASSWORD:?请运行启动脚本准备本地管理员}"
+    secrets: [auth-private-key, auth-public-key]
+    depends_on: *base-dependencies
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8065/api/auth/ping"]
+
+  inventory:
+    <<: *app
+    image: ticket-inventory-service:local
+    build: {context: ./ticket-inventory-service}
+    ports: ["127.0.0.1:${TICKET_INVENTORY_PORT:-18063}:8063"]
+    environment:
+      <<: *app-env
+      INVENTORY_DB_URL: "jdbc:mysql://mysql:3306/ticket_inventory?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true"
+      ORDER_INVENTORY_CREDENTIAL_PATH: /run/secrets/order-inventory-token
+      EVENT_INVENTORY_CREDENTIAL_PATH: /run/secrets/event-inventory-token
+    secrets: [order-inventory-token, event-inventory-token]
+    depends_on: *base-dependencies
+    healthcheck:
+      <<: *ready
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' -H \"X-Order-Inventory-Credential: $$(cat /run/secrets/order-inventory-token)\" http://127.0.0.1:8063/internal/stocks/1); [ \"$$code\" = 200 ] || [ \"$$code\" = 404 ]"]
+
+  event:
+    <<: *app
+    image: ticket-event-service:local
+    build: {context: ./ticket-event-service}
+    ports: ["127.0.0.1:${TICKET_EVENT_PORT:-18061}:8061"]
+    environment:
+      <<: *app-env
+      EVENT_DB_URL: "jdbc:mysql://mysql:3306/ticket_event?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true"
+      ORDER_EVENT_CREDENTIAL_PATH: /run/secrets/order-event-token
+      EVENT_INVENTORY_CREDENTIAL_PATH: /run/secrets/event-inventory-token
+    secrets: [order-event-token, event-inventory-token]
+    depends_on:
+      <<: *base-dependencies
+      inventory: {condition: service_healthy}
+      auth: {condition: service_healthy}
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8061/api/events/ping"]
+
+  payment:
+    <<: *app
+    image: ticket-payment-service:local
+    build: {context: ./ticket-payment-service}
+    ports: ["127.0.0.1:${TICKET_PAYMENT_PORT:-18064}:8064"]
+    environment:
+      <<: *app-env
+      PAYMENT_DB_URL: "jdbc:mysql://mysql:3306/ticket_payment?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true"
+      ORDER_PAYMENT_CREDENTIAL_PATH: /run/secrets/order-payment-token
+      PAYMENT_ORDER_CREDENTIAL_PATH: /run/secrets/payment-order-token
+      LOCAL_RABBITMQ_HOST: rabbitmq
+      LOCAL_RABBITMQ_USERNAME: ticket
+      LOCAL_RABBITMQ_PASSWORD: "${TICKET_DOCKER_RABBITMQ_PASSWORD:?RabbitMQ密码未加载}"
+      TICKET_MQ_ENABLED: "true"
+      PAYMENT_SIMULATION_ENABLED: "true"
+    secrets: [order-payment-token, payment-order-token]
+    depends_on:
+      <<: *base-dependencies
+      rabbitmq: {condition: service_healthy}
+      auth: {condition: service_healthy}
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8064/api/payments/ping"]
+
+  order:
+    <<: *app
+    image: ticket-order-service:local
+    build: {context: ./ticket-order-service}
+    expose: ["8062"]
+    environment:
+      <<: *app-env
+      ORDER_DB_URL: "jdbc:mysql://mysql:3306/ticket_order?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true"
+      # Spring在容器内解析HOSTNAME，Tempo可区分两个相同服务的实例。
+      SPRING_APPLICATION_JSON: '{"management":{"opentelemetry":{"resource-attributes":{"service.instance.id":"$${HOSTNAME}"}}}}'
+      ORDER_EVENT_CREDENTIAL_PATH: /run/secrets/order-event-token
+      ORDER_INVENTORY_CREDENTIAL_PATH: /run/secrets/order-inventory-token
+      ORDER_PAYMENT_CREDENTIAL_PATH: /run/secrets/order-payment-token
+      PAYMENT_ORDER_CREDENTIAL_PATH: /run/secrets/payment-order-token
+      LOCAL_RABBITMQ_HOST: rabbitmq
+      LOCAL_RABBITMQ_USERNAME: ticket
+      LOCAL_RABBITMQ_PASSWORD: "${TICKET_DOCKER_RABBITMQ_PASSWORD:?RabbitMQ密码未加载}"
+      TICKET_MQ_ENABLED: "true"
+    secrets: [order-event-token, order-inventory-token, order-payment-token, payment-order-token]
+    depends_on:
+      <<: *base-dependencies
+      rabbitmq: {condition: service_healthy}
+      auth: {condition: service_healthy}
+      event: {condition: service_healthy}
+      inventory: {condition: service_healthy}
+      payment: {condition: service_healthy}
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8062/api/orders/ping"]
+
+  gateway:
+    <<: *app
+    image: ticket-gateway:local
+    build: {context: ./ticket-gateway}
+    ports: ["127.0.0.1:${TICKET_GATEWAY_PORT:-18060}:8060"]
+    environment: *app-env
+    depends_on:
+      <<: *base-dependencies
+      auth: {condition: service_healthy}
+      event: {condition: service_healthy}
+      order: {condition: service_healthy}
+      payment: {condition: service_healthy}
+    healthcheck:
+      <<: *ready
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8060/api/auth/ping"]
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    pull_policy: never
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    ports:
+      - "127.0.0.1:${TICKET_DOCKER_TEMPO_PORT:-3201}:3200"
+      - "127.0.0.1:${TICKET_DOCKER_OTLP_PORT:-4319}:4318"
+    volumes:
+      - ./deploy/tracing/tempo.yaml:/etc/tempo.yaml:ro
+      - tempo-data:/var/tempo
+
+  grafana:
+    image: grafana/grafana:13.2.2
+    pull_policy: never
+    restart: unless-stopped
+    ports: ["127.0.0.1:${TICKET_DOCKER_GRAFANA_PORT:-3002}:3000"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_VIEWERS_CAN_EDIT: "true"
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./deploy/tracing/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/monitoring/dashboards:/var/lib/grafana/ticket-dashboards:ro
+      - grafana-data:/var/lib/grafana
+    depends_on: [tempo, prometheus]
+
+  prometheus:
+    image: prom/prometheus:v3.14.0
+    pull_policy: never
+    restart: unless-stopped
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=7d"]
+    ports: ["127.0.0.1:${TICKET_PROMETHEUS_PORT:-19090}:9090"]
+    volumes:
+      - ./deploy/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/monitoring/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus-data:/prometheus
+
+secrets:
+  auth-private-key: {file: ./.local/auth-keys/private.pem}
+  auth-public-key: {file: ./.local/auth-keys/public.pem}
+  order-event-token: {file: ./.local/service-credentials/order-event.token}
+  order-inventory-token: {file: ./.local/service-credentials/order-inventory.token}
+  event-inventory-token: {file: ./.local/service-credentials/event-inventory.token}
+  order-payment-token: {file: ./.local/service-credentials/order-payment.token}
+  payment-order-token: {file: ./.local/service-credentials/payment-order.token}
+
+volumes:
+  mysql-data:
+  redis-data:
+  rabbitmq-data:
+  nacos-data:
+  nacos-logs:
+  tempo-data:
+  grafana-data:
+  prometheus-data:

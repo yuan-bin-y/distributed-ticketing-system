@@ -129,6 +129,13 @@ public class InventoryClient {
                     .accept(MediaType.APPLICATION_JSON)
                     .exchange((sent, received) -> {
                         int status = received.getStatusCode().value();
+                        if(status==503) {
+                            Result<Object> error=received.bodyTo(ERROR_TYPE);
+                            if(error!=null && "STOCK_BUSY".equals(error.code()))
+                                throw InventoryServiceCallException.capacityRejected();
+                            throw new InventoryServiceCallException(Reason.UNAVAILABLE,
+                                    "库存服务暂时不可用，操作结果请使用相同请求核对或重试");
+                        }
                         if (received.getStatusCode().is5xxServerError()) {
                             throw new InventoryServiceCallException(Reason.UNAVAILABLE,
                                     "库存服务暂时不可用，操作结果请使用相同请求核对或重试");

@@ -16,6 +16,17 @@ import org.springframework.security.web.authentication.www.BasicAuthenticationFi
 @Configuration
 @EnableConfigurationProperties(OrderEventCredentialProperties.class)
 public class EventSecurityConfig {
+    /** 独立管理端口开放只读健康和指标；业务端口不公开Prometheus。 */
+    @org.springframework.context.annotation.Bean
+    @org.springframework.core.annotation.Order(0)
+    public org.springframework.security.web.SecurityFilterChain managementSecurity(
+            org.springframework.security.config.annotation.web.builders.HttpSecurity http,
+            @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
+        return http.securityMatcher(request -> port>0 && request.getLocalPort()==port)
+                .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
+                .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
+                        "/actuator/health","/actuator/prometheus").permitAll().anyRequest().denyAll()).build();
+    }
     @Bean OrderEventCredential orderEventCredential(OrderEventCredentialProperties properties)throws java.io.IOException{return new OrderEventCredential(properties);}
     /** 内部购票规则只接受Order服务身份；用户和管理员JWT不能替代服务凭证。 */
     @Bean @Order(1) SecurityFilterChain internalEventSecurity(HttpSecurity http,OrderEventCredential credential,ObjectMapper json)throws Exception{

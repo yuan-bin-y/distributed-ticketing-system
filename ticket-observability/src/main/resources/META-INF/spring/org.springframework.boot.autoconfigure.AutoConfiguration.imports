@@ -1,1 +1,2 @@
 com.byy.ticket.observability.TraceSupportAutoConfiguration
+com.byy.ticket.observability.WorkflowMetricsAutoConfiguration

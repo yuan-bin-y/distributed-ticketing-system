@@ -1,0 +1,30 @@
+name: ticket-event-demo
+
+services:
+  event:
+    image: ticket-event-service:local
+    pull_policy: never
+    container_name: ticket-event-local
+
+    ports:
+      - "127.0.0.1:18061:8061"
+
+    env_file:
+      - ./.local/event-docker.env
+
+    environment:
+      LOCAL_MYSQL_USERNAME: "${LOCAL_MYSQL_USERNAME:?请先加载数据库账号}"
+      LOCAL_MYSQL_PASSWORD: "${LOCAL_MYSQL_PASSWORD:?请先加载数据库密码}"
+      LOCAL_REDIS_PASSWORD: "${LOCAL_REDIS_PASSWORD:-}"
+      SPRING_CLOUD_NACOS_DISCOVERY_ENABLED: "false"
+
+    volumes:
+      - type: bind
+        source: ./.local/service-credentials
+        target: /app/.local/service-credentials
+        read_only: true
+        bind:
+          create_host_path: false
+
+    command:
+      - "--ticket.event-preparation.enabled=false"

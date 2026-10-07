@@ -54,6 +54,7 @@ public class InventoryVerification {
     private final int port;
     private long missingTierId;
     private int passed;
+    private String serviceCredential;
 
     InventoryVerification(JdbcTemplate jdbc, InventoryService inventory,
                           PlatformTransactionManager manager, int port) {
@@ -73,6 +74,7 @@ public class InventoryVerification {
             var verification = new InventoryVerification(context.getBean(JdbcTemplate.class),
                     context.getBean(InventoryService.class), context.getBean(PlatformTransactionManager.class),
                     ((WebServerApplicationContext) context).getWebServer().getPort());
+            verification.serviceCredential=context.getBean(com.byy.ticket.security.service.OrderInventoryCredential.class).value();
             try {
                 verification.run();
                 System.out.println("PASS inventory verification: " + verification.passed
@@ -423,7 +425,9 @@ public class InventoryVerification {
 
     void http(String method, String path, String body, int status, String code) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create("http://127.0.0.1:" + port + path))
-                .timeout(Duration.ofSeconds(10)).header("X-Trace-Id", TRACE);
+                .timeout(Duration.ofSeconds(10)).header("X-Trace-Id", TRACE)
+                .header("traceparent","00-"+TRACE+"-0123456789abcdef-01")
+                .header(com.byy.ticket.security.service.OrderInventoryCredential.HEADER,serviceCredential);
         if (body != null) builder.header("Content-Type", "application/json");
         builder.method(method, body == null ? HttpRequest.BodyPublishers.noBody() : HttpRequest.BodyPublishers.ofString(body));
         var response = http.send(builder.build(), HttpResponse.BodyHandlers.ofString());

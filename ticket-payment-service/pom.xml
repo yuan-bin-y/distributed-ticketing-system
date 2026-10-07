@@ -11,6 +11,7 @@
     </parent>
     <artifactId>ticket-payment-service</artifactId>
     <dependencies>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
         <!-- Nacos配置中心客户端，版本由Alibaba BOM管理。 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

@@ -1,0 +1,34 @@
+rule_files: [/etc/prometheus/alerts.yml]
+evaluation_interval: 5s
+tests:
+  - interval: 5s
+    input_series:
+      - series: 'up{job="ticket-services",service="inventory",instance="test:9000"}'
+        values: '0+0x20'
+      - series: 'ticket_workflow_oldest_seconds{workflow="order_recovery",application="ticket-order-service"}'
+        values: '120+0x20'
+      - series: 'ticket_workflow_pending{workflow="order_review",application="ticket-order-service"}'
+        values: '1+0x20'
+      - series: 'ticket_mq_queue_messages{queue="dead",application="ticket-order-service"}'
+        values: '3+0x20'
+    alert_rule_test:
+      - eval_time: 40s
+        alertname: TicketServiceUnavailable
+        exp_alerts:
+          - exp_labels: {job: ticket-services, service: inventory, instance: "test:9000", severity: critical}
+            exp_annotations: {summary: "服务指标端点不可访问：inventory / test:9000"}
+      - eval_time: 40s
+        alertname: TicketRecoveryStalled
+        exp_alerts:
+          - exp_labels: {workflow: order_recovery, application: ticket-order-service, severity: warning}
+            exp_annotations: {summary: "工作流积压超过60秒：order_recovery"}
+      - eval_time: 20s
+        alertname: TicketManualReviewRequired
+        exp_alerts:
+          - exp_labels: {workflow: order_review, application: ticket-order-service, severity: warning}
+            exp_annotations: {summary: "存在需要人工核对的业务记录：order_review"}
+      - eval_time: 20s
+        alertname: TicketPaymentDeadLetters
+        exp_alerts:
+          - exp_labels: {queue: dead, application: ticket-order-service, severity: warning}
+            exp_annotations: {summary: "支付消息进入死信，请核对后使用现有重放工具"}

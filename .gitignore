@@ -1,14 +1,15 @@
+# Build output (keep the Maven wrapper distributable).
 target/
+*.class
+*.jar
+*.war
 !.mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
 .kotlin
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
+.idea/
 *.iws
 *.iml
 *.ipr
@@ -37,6 +38,51 @@ build/
 
 ### Mac OS ###
 .DS_Store
+Thumbs.db
+Desktop.ini
 
 ### Local middleware, data and credentials ###
 .local/
+logs/
+*.log
+*.hprof
+hs_err_pid*
+replay_pid*
+.env
+.env.*
+*.env
+!.env.example
+!.env.sample
+!.env.template
+!*.env.example
+!*.env.sample
+!*.env.template
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+*.token
+*.password
+*.bak
+*.tmp
+*~
+
+# Personal notes and raw run output stay local. Publish only the docs below.
+# Add a !/docs/<name> entry when a new document is ready for other readers.
+/notes/
+/docs/*
+!/docs/apifox/
+!/docs/v1-architecture.md
+!/docs/v1-acceptance.md
+!/docs/docker-deployment.md
+!/docs/docker-acceptance.md
+!/docs/order-failover.md
+!/docs/payment-mq.md
+!/docs/event-cache-rate-limit.md
+!/docs/event-resilience.md
+!/docs/http-resilience.md
+!/docs/http-tracing.md
+!/docs/nacos-config.md
+!/docs/hot-stock-monitoring.md
+!/docs/hot-stock-monitoring-acceptance.md

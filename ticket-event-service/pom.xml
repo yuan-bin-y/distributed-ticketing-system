@@ -12,6 +12,7 @@
     <artifactId>ticket-event-service</artifactId>
 
     <dependencies>
+        <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId></dependency>
         <!-- 配置中心与服务发现是两个独立客户端。 -->
         <dependency>
             <groupId>com.alibaba.cloud</groupId>

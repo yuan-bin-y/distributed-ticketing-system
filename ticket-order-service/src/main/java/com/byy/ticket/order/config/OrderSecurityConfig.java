@@ -18,6 +18,17 @@ import tools.jackson.databind.ObjectMapper;
 /** 两条独立安全链：内部接口使用服务凭证；公共订单接口使用用户JWT。 */
 @Configuration
 public class OrderSecurityConfig {
+    /** 独立管理端口开放只读健康和指标；业务端口不公开Prometheus。 */
+    @org.springframework.context.annotation.Bean
+    @org.springframework.core.annotation.Order(0)
+    public org.springframework.security.web.SecurityFilterChain managementSecurity(
+            org.springframework.security.config.annotation.web.builders.HttpSecurity http,
+            @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
+        return http.securityMatcher(request -> port>0 && request.getLocalPort()==port)
+                .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
+                .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
+                        "/actuator/health","/actuator/prometheus").permitAll().anyRequest().denyAll()).build();
+    }
     /** 优先匹配internal，仅Payment服务可POST通知，其余内部入口默认拒绝。 */
     @Bean
     @Order(1)

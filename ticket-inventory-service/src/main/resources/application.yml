@@ -2,6 +2,13 @@ server:
   port: ${INVENTORY_PORT:8063}
 
 spring:
+  data:
+    redis:
+      host: ${LOCAL_REDIS_HOST:127.0.0.1}
+      port: ${LOCAL_REDIS_PORT:6379}
+      password: ${LOCAL_REDIS_PASSWORD:}
+      connect-timeout: 500ms
+      timeout: 500ms
   application:
     name: ticket-inventory-service
   datasource:
@@ -24,6 +31,11 @@ spring:
         server-addr: ${NACOS_SERVER_ADDR:127.0.0.1:8848}
 
 ticket:
+  hot-stock:
+    enabled: ${INVENTORY_HOT_STOCK_ENABLED:false}
+    permits: ${INVENTORY_HOT_STOCK_PERMITS:2}
+    lease-ms: 15000
+    prefix: ${INVENTORY_HOT_STOCK_PREFIX:ticket:hot-stock:}
   inventory-service-auth:
     order-inventory-token: ${ORDER_INVENTORY_SERVICE_TOKEN:}
     credential-path: ${ORDER_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/order-inventory.token}
@@ -32,10 +44,19 @@ ticket:
     credential-path: ${EVENT_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/event-inventory.token}
 # 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
 management:
+  server:
+    port: ${TICKET_MANAGEMENT_PORT:-1}
+    address: ${TICKET_MANAGEMENT_ADDRESS:127.0.0.1}
+  metrics:
+    tags:
+      application: ${spring.application.name}
+    distribution:
+      percentiles-histogram:
+        http.server.requests: true
   endpoints:
     web:
       exposure:
-        include: health
+        include: health,prometheus
   tracing:
     propagation:
       type: W3C

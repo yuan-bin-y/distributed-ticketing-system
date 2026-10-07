@@ -15,6 +15,19 @@ import org.springframework.security.web.server.savedrequest.NoOpServerRequestCac
 @Configuration
 @EnableWebFluxSecurity
 public class GatewaySecurityConfig {
+    /** 响应式管理链只接受独立内网端口，业务入口不公开指标。 */
+    @Bean @org.springframework.core.annotation.Order(0)
+    public SecurityWebFilterChain managementSecurity(ServerHttpSecurity http,
+            @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) {
+        return http.securityMatcher(exchange -> {
+                    var address=exchange.getRequest().getLocalAddress();
+                    return port>0 && address!=null && address.getPort()==port
+                        ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
+                        : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
+                }).csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
+                .authorizeExchange(a->a.pathMatchers(HttpMethod.GET,"/actuator/health","/actuator/prometheus")
+                        .permitAll().anyExchange().denyAll()).build();
+    }
     /** 匿名仅开放注册、登录、刷新、启动探测和GET活动；其他请求必须认证。 */
     @Bean
     public SecurityWebFilterChain securityWebFilterChain(ServerHttpSecurity http, ReactiveJwtDecoder accessTokenDecoder,

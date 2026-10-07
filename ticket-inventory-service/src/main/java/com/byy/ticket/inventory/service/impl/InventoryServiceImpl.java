@@ -10,6 +10,9 @@ import com.byy.ticket.inventory.model.ReservationStatus;
 import com.byy.ticket.inventory.model.StockReservation;
 import com.byy.ticket.inventory.model.TicketStock;
 import com.byy.ticket.inventory.service.InventoryService;
+import com.byy.ticket.inventory.service.HotStockGate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import com.byy.ticket.inventory.vo.inventory.StockReservationVO;
 import com.byy.ticket.inventory.vo.inventory.TicketStockVO;
 import org.springframework.stereotype.Service;
@@ -28,14 +31,21 @@ public class InventoryServiceImpl implements InventoryService {
     private final TicketStockMapper stockMapper;
     private final StockReservationMapper reservationMapper;
     private final Clock clock;
+    private final HotStockGate hotStockGate;
+    private final TransactionTemplate reservationTransaction;
 
     /**
      * 注入库存 Mapper、预留 Mapper 和时钟，所有写入都落在库存服务自己的数据库。
      */
-    public InventoryServiceImpl(TicketStockMapper stockMapper, StockReservationMapper reservationMapper, Clock clock) {
+    public InventoryServiceImpl(TicketStockMapper stockMapper, StockReservationMapper reservationMapper, Clock clock,
+                               HotStockGate hotStockGate, PlatformTransactionManager transactionManager) {
         this.stockMapper = stockMapper;
         this.reservationMapper = reservationMapper;
         this.clock = clock;
+        this.hotStockGate=hotStockGate;
+        this.reservationTransaction=new TransactionTemplate(transactionManager);
+        this.reservationTransaction.setIsolationLevel(Isolation.READ_COMMITTED.value());
+        this.reservationTransaction.setTimeout(10);
     }
 
     /**
@@ -44,9 +54,16 @@ public class InventoryServiceImpl implements InventoryService {
      * 任一步失败都会回滚此事务中的记录写入和库存修改，避免产生无库存支撑的预留。
      */
     @Override
-    @Transactional(isolation = Isolation.READ_COMMITTED)
     public StockReservationVO reserve(ReserveStockDTO request) {
         validateRequest(request);
+        // 必须在开启事务前领取，且在事务提交/回滚以后释放。Redis只保护并发，SQL仍决定库存。
+        try (HotStockGate.Permit permit=hotStockGate.acquire(request.ticketTierId())) {
+            return reservationTransaction.execute(status -> reserveInTransaction(request));
+        }
+    }
+
+    /** 仅在TransactionTemplate事务中执行；保持原预留幂等、条件扣减及两表原子提交。 */
+    private StockReservationVO reserveInTransaction(ReserveStockDTO request) {
         StockReservation candidate = new StockReservation();
         candidate.setReservationId(UUID.randomUUID().toString().replace("-", ""));
         candidate.setOrderId(request.orderId());

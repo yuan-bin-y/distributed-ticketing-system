@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: ticket-platform
+    folder: Ticket Platform
+    type: file
+    options:
+      path: /var/lib/grafana/ticket-dashboards

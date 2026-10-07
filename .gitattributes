@@ -1,0 +1,4 @@
+# Shell脚本会在Linux容器执行，Windows检出也保留LF。
+*.sh text eol=lf
+# Windows双击入口使用CMD要求的CRLF。
+*.cmd text eol=crlf

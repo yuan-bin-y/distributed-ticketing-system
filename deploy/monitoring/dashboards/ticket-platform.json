@@ -1,0 +1,365 @@
+{
+  "version": 1,
+  "uid": "ticket-platform-overview",
+  "refresh": "5s",
+  "title": "Ticket Platform Overview",
+  "panels": [
+    {
+      "title": "服务健康",
+      "targets": [
+        {
+          "expr": "up{job=\"ticket-services\"}",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 1,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 0.0,
+        "x": 0,
+        "h": 8
+      }
+    },
+    {
+      "title": "HTTP请求率",
+      "targets": [
+        {
+          "expr": "sum by (application) (rate(http_server_requests_seconds_count[1m]))",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 2,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 0.0,
+        "x": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "HTTP P95延迟（秒）",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95,sum by (le,application) (rate(http_server_requests_seconds_bucket[2m])))",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 3,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 8.0,
+        "x": 0,
+        "h": 8
+      }
+    },
+    {
+      "title": "HTTP 5xx请求率",
+      "targets": [
+        {
+          "expr": "sum by (application) (rate(http_server_requests_seconds_count{status=~\"5..\"}[1m]))",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 4,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 8.0,
+        "x": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "持久化任务数量",
+      "targets": [
+        {
+          "expr": "max by (workflow) (ticket_workflow_pending)",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 5,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 16.0,
+        "x": 0,
+        "h": 8
+      }
+    },
+    {
+      "title": "最旧积压时长（秒）",
+      "targets": [
+        {
+          "expr": "max by (workflow) (ticket_workflow_oldest_seconds)",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 6,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 16.0,
+        "x": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "热点库存准入结果",
+      "targets": [
+        {
+          "expr": "sum by (outcome) (rate(ticket_inventory_admission_total[1m]))",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 7,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 24.0,
+        "x": 0,
+        "h": 8
+      }
+    },
+    {
+      "title": "数据库连接等待",
+      "targets": [
+        {
+          "expr": "hikaricp_connections_pending",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 8,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 24.0,
+        "x": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "业务指标采样健康",
+      "targets": [
+        {
+          "expr": "ticket_workflow_collector_healthy",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 9,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 32.0,
+        "x": 0,
+        "h": 8
+      }
+    },
+    {
+      "title": "当前告警（1为触发）",
+      "targets": [
+        {
+          "expr": "ALERTS{alertstate=\"firing\"}",
+          "legendFormat": "{{application}} {{instance}} {{workflow}} {{outcome}} {{alertname}}",
+          "refId": "A"
+        }
+      ],
+      "id": 10,
+      "options": {
+        "legend": {
+          "placement": "bottom",
+          "displayMode": "list"
+        }
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "ticket-prometheus"
+      },
+      "type": "timeseries",
+      "fieldConfig": {
+        "overrides": [],
+        "defaults": {}
+      },
+      "gridPos": {
+        "w": 12,
+        "y": 32.0,
+        "x": 12,
+        "h": 8
+      }
+    },
+    {
+      "title": "MQ各队列待投递数量",
+      "type": "timeseries",
+      "datasource": {
+        "uid": "ticket-prometheus",
+        "type": "prometheus"
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "gridPos": {
+        "w": 24,
+        "y": 40,
+        "h": 8,
+        "x": 0
+      },
+      "targets": [
+        {
+          "legendFormat": "{{queue}}",
+          "refId": "A",
+          "expr": "max by (queue) (ticket_mq_queue_messages)"
+        }
+      ],
+      "id": 11,
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    }
+  ],
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "schemaVersion": 39
+}

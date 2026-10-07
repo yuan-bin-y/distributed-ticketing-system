@@ -26,6 +26,13 @@ import java.util.Map;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+    /** 容量满额属于正常削峰；不输出堆栈，客户端不得据此熔断整个库存服务。 */
+    @ExceptionHandler(com.byy.ticket.inventory.exception.HotStockBusyException.class)
+    @ResponseStatus(HttpStatus.SERVICE_UNAVAILABLE)
+    public Result<Void> handleHotStockBusy(com.byy.ticket.inventory.exception.HotStockBusyException exception) {
+        return new Result<>("STOCK_BUSY",exception.getMessage(),null,
+                com.byy.ticket.common.trace.TraceIdContext.getOrCreate());
+    }
 
     /**
      * 将 Bean Validation 的字段错误转换为 HTTP 400，返回字段名和具体提示。

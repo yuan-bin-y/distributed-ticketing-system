@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!target/
+!target/ticket-inventory-service-1.0-SNAPSHOT.jar

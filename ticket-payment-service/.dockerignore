@@ -1,0 +1,4 @@
+**
+!Dockerfile
+!target/
+!target/ticket-payment-service-1.0-SNAPSHOT.jar
