@@ -1,14 +1,18 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "分布式票务平台 第一版内部API",
-    "version": "1.0.0",
-    "description": "服务间协作契约，操作分别直连对应端口，不经过Gateway。每个接口使用分方向服务凭证，用户JWT不能替代。不要对真实业务订单绕过流程执行库存释放或支付创建；调试写接口使用独立测试数据。历史/internal/orders/stock-reservations已被安全链拒绝，未列为可调用接口。"
+    "title": "分布式票务交易平台 内部API",
+    "version": "2.0.0",
+    "description": "当前服务间HTTP协作契约，不经过Gateway。各操作servers分别标明Docker宿主机端口和IDEA端口，使用分方向服务凭证，用户JWT不能替代。Docker Order不映射宿主机端口；付款通知HTTP入口仅作为兼容方式，MQ模式无需手工调用。库存预留准入暂满返回503 STOCK_BUSY，应保持原订单编号和参数核对或重试；这不代表库存不足或整个服务故障。历史/internal/orders/stock-reservations被安全链拒绝，未列为可调用接口。调试内部写接口应使用独立数据。"
   },
   "servers": [
     {
+      "url": "http://localhost:18063",
+      "description": "Docker库存服务；其他操作使用各自servers"
+    },
+    {
       "url": "http://localhost:8063",
-      "description": "本地开发"
+      "description": "IDEA库存服务；其他操作使用各自servers"
     }
   ],
   "security": [],
@@ -73,18 +77,41 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
         "security": [],
         "servers": [
           {
+            "url": "http://localhost:18065",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8065",
-            "description": "直连Auth公钥；Gateway不开放此接口"
+            "description": "直连Auth公钥；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -204,10 +231,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -218,8 +264,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18061",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8061",
-            "description": "直连Event内部；Gateway不开放此接口"
+            "description": "直连Event内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -327,10 +377,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -356,8 +425,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -477,10 +550,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -491,8 +583,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -612,10 +708,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -626,8 +741,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -639,7 +758,7 @@
         ],
         "summary": "Order预留库存",
         "operationId": "reserveStock",
-        "description": "首次expiresAt晚于当前时间。相同orderId和全部参数只预留一次；重复可返回RESERVED/SOLD/RELEASED，释放后不再次扣库存。库存不足或参数冲突409。",
+        "description": "首次expiresAt晚于当前时间。相同orderId和全部参数只预留一次；重复可返回RESERVED/SOLD/RELEASED，释放后不再次扣库存。库存不足或参数冲突409。 开启热点保护时先领取按票档共享的Redis并发额度，满额返回503 STOCK_BUSY，不进入库存预留事务；保持原orderId、票档和数量重试，不生成新预留请求。库存不足仍为409 CONFLICT。",
         "responses": {
           "200": {
             "description": "成功",
@@ -720,11 +839,31 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "STOCK_BUSY表示票档准入暂满；SERVICE_BUSY表示Redis或存储暂时不可用。保留原orderId及参数核对或重试",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResult"
+                },
+                "examples": {
+                  "stockBusy": {
+                    "summary": "票档并发准入暂满",
+                    "value": {
+                      "code": "STOCK_BUSY",
+                      "message": "当前票档预留请求繁忙，请稍后重试",
+                      "data": null,
+                      "traceId": "0123456789abcdef0123456789abcdef"
+                    }
+                  },
+                  "serviceBusy": {
+                    "summary": "准入Redis或数据库暂时不可用",
+                    "value": {
+                      "code": "SERVICE_BUSY",
+                      "message": "库存服务繁忙，请使用相同订单编号和参数重试",
+                      "data": null,
+                      "traceId": "0123456789abcdef0123456789abcdef"
+                    }
+                  }
                 }
               }
             }
@@ -735,10 +874,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -766,8 +924,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -887,10 +1049,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -901,8 +1082,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1022,10 +1207,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1036,8 +1240,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1157,10 +1365,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1171,8 +1398,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8063",
-            "description": "直连Inventory内部；Gateway不开放此接口"
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1280,10 +1511,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1310,8 +1560,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18064",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8064",
-            "description": "直连Payment内部；Gateway不开放此接口"
+            "description": "直连Payment内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1431,10 +1685,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1445,8 +1718,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18064",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8064",
-            "description": "直连Payment内部；Gateway不开放此接口"
+            "description": "直连Payment内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1554,10 +1831,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1582,8 +1878,12 @@
         ],
         "servers": [
           {
+            "url": "http://localhost:18064",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
             "url": "http://localhost:8064",
-            "description": "直连Payment内部；Gateway不开放此接口"
+            "description": "直连Payment内部；Gateway不开放此接口（IDEA开发）"
           }
         ]
       }
@@ -1595,7 +1895,7 @@
         ],
         "summary": "Payment通知成功线索",
         "operationId": "receivePaymentNotification",
-        "description": "只接受Payment凭证。正文仅orderNo/paymentNo，不接受成功标记和金额作为依据；Order回查Payment并持久化后accepted=true，异步继续履约。",
+        "description": "只接受Payment凭证。正文仅orderNo/paymentNo，不接受成功标记和金额作为依据；Order回查Payment并持久化后accepted=true，异步继续履约。 此HTTP接口为MQ关闭时的付款通知兼容入口；Docker默认由RabbitMQ消费者接收付款成功线索并保存付款依据，不需要通过Apifox发送该通知。",
         "responses": {
           "200": {
             "description": "成功",
@@ -1711,10 +2011,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1740,7 +2059,7 @@
         "servers": [
           {
             "url": "http://localhost:8062",
-            "description": "直连Order内部；Gateway不开放此接口"
+            "description": "IDEA Order开发端口；Docker中仅Compose网络order:8062可达，不映射宿主机"
           }
         ]
       }
@@ -1815,7 +2134,8 @@
               "INTERNAL_ERROR",
               "UPSTREAM_UNAVAILABLE",
               "UPSTREAM_TIMEOUT",
-              "INVALID_UPSTREAM_RESPONSE"
+              "INVALID_UPSTREAM_RESPONSE",
+              "STOCK_BUSY"
             ]
           },
           "message": {

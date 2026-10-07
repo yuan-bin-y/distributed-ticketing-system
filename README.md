@@ -2,7 +2,7 @@
 
 基于 **Spring Boot / Spring Cloud** 的活动票务交易后端，覆盖从管理员创建活动、准备库存和发布，到用户购票、模拟付款、库存确认及电子票生成的完整流程。
 
-项目拆分为 **6 个独立微服务、4 个公共模块、5 个业务数据库**。围绕跨服务交易，实现了可靠消息、最终一致性、缓存与限流、热点库存保护、故障隔离、分布式追踪和容器部署，适合用于学习和验证微服务工程实践。
+项目拆分为 **6 个独立微服务、4 个公共模块、5 个业务数据库**。围绕跨服务交易，实现了可靠消息、最终一致性、缓存与限流、热点库存保护、故障隔离、分布式追踪和容器部署。
 
 ## 核心业务功能
 
@@ -55,8 +55,6 @@ flowchart LR
 - **数据边界**：每个业务服务只访问自己的数据库，通过 HTTP 契约和 MQ 事件交换信息。
 - **观测链路**：HTTP、MQ 及后台恢复任务关联到 Tempo；Prometheus 采集指标，Grafana 展示链路、面板及告警。
 
-详细服务关系、交易顺序及代码入口见 [架构与交易流程](docs/v1-architecture.md)。
-
 ## 完整交易流程
 
 ### 活动发布
@@ -86,19 +84,19 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 
 ## 关键技术方案
 
-| 要解决的问题 | 实现方案 | 说明 |
-| --- | --- | --- |
-| 服务发现与配置管理 | Nacos 注册发现、公共与服务配置；日志级别和 Event 缓存 TTL 动态刷新 | [Nacos 配置](docs/nacos-config.md) |
-| 跨服务身份验证 | Auth 签发 RS256 JWT，网关和业务服务独立校验签名与 Redis 会话；内部接口使用分方向凭证 | [安全公共模块](ticket-security/) |
-| 跨库交易与网络结果不确定 | 本地事务、持久化状态、唯一键、原参数幂等、事实核对、租约领取、退避重试和补偿 | [交易一致性](docs/v1-architecture.md#一致性与恢复) |
-| 付款事件可靠传递 | RabbitMQ + Outbox，发布 Confirm / Return 检查，消费事务提交后 ACK，消费幂等、三档延迟重试和死信重投 | [支付消息](docs/payment-mq.md) |
-| 热点查询与缓存重建竞争 | 展示缓存、空结果短缓存、TTL 抖动、Redis 重建锁、随机令牌校验、提交后版本失效及受控回源 | [缓存与限流](docs/event-cache-rate-limit.md) |
-| 入口突发请求 | WebFlux 响应式 Redis Lua 令牌桶，活动查询与订单请求按全局及用户 / IP 限流 | [网关准入](docs/event-cache-rate-limit.md#返回与身份边界) |
-| 热点库存行竞争 | 事务前申请 Redis 按票档共享的并发额度，满额返回 `STOCK_BUSY`；MySQL 条件更新及事务保证库存正确 | [热点库存保护](docs/hot-stock-monitoring.md) |
-| 下游故障扩散 | Resilience4j 熔断、并发隔离、HTTP 超时及故障分类；写请求由业务流程核对和重试 | [HTTP 调用保护](docs/http-resilience.md) |
-| 请求和后台任务难以排查 | Micrometer Tracing + OpenTelemetry + Tempo，持久化并恢复异步追踪上下文，关联 HTTP、MQ 和恢复任务 | [分布式追踪](docs/http-tracing.md) |
-| 服务故障和业务积压不可见 | Prometheus 指标、Grafana 11 个面板和 10 条告警规则，覆盖服务健康、延迟、恢复积压、死信和采样异常 | [指标与告警](docs/hot-stock-monitoring.md) |
-| 多实例接管与部署复现 | Docker Compose、健康检查、独立数据卷、只读凭证挂载；订单双实例、优雅停止、有界读取故障切换 | [部署](docs/docker-deployment.md)、[故障切换](docs/order-failover.md) |
+| 要解决的问题 | 实现方案 |
+| --- | --- |
+| 服务发现与配置管理 | Nacos 注册发现、公共与服务配置；日志级别和 Event 缓存 TTL 动态刷新 |
+| 跨服务身份验证 | Auth 签发 RS256 JWT，网关和业务服务独立校验签名与 Redis 会话；内部接口使用分方向凭证 |
+| 跨库交易与网络结果不确定 | 本地事务、持久化状态、唯一键、原参数幂等、事实核对、租约领取、退避重试和补偿 |
+| 付款事件可靠传递 | RabbitMQ + Outbox，发布 Confirm / Return 检查，消费事务提交后 ACK，消费幂等、三档延迟重试和死信重投 |
+| 热点查询与缓存重建竞争 | 展示缓存、空结果短缓存、TTL 抖动、Redis 重建锁、随机令牌校验、提交后版本失效及受控回源 |
+| 入口突发请求 | WebFlux 响应式 Redis Lua 令牌桶，活动查询与订单请求按全局及用户 / IP 限流 |
+| 热点库存行竞争 | 事务前申请 Redis 按票档共享的并发额度，满额返回 `STOCK_BUSY`；MySQL 条件更新及事务保证库存正确 |
+| 下游故障扩散 | Resilience4j 熔断、并发隔离、HTTP 超时及故障分类；写请求由业务流程核对和重试 |
+| 请求和后台任务难以排查 | Micrometer Tracing + OpenTelemetry + Tempo，持久化并恢复异步追踪上下文，关联 HTTP、MQ 和恢复任务 |
+| 服务故障和业务积压不可见 | Prometheus 指标、Grafana 11 个面板和 10 条告警规则，覆盖服务健康、延迟、恢复积压、死信和采样异常 |
+| 多实例接管与部署复现 | Docker Compose、健康检查、独立数据卷、只读凭证挂载；订单双实例、优雅停止、有界读取故障切换 |
 
 一致性采用可恢复的最终一致性。消息发布确认和消费 ACK 分别对应投递与接收阶段，完整出票以订单达到 `COMPLETED` 为准。
 
@@ -191,20 +189,6 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 [Apifox 使用指南](docs/apifox/README.md) 提供 **22 个公开接口、13 个内部接口**的 OpenAPI 契约，以及登录凭证、活动、订单和支付编号的变量提取脚本。日常交易调试导入公开接口，并将网关环境地址设置为 `http://localhost:18060`。
 
 推荐演示顺序：管理员创建草稿 → 等待库存准备 → 发布 → 用户注册登录 → 浏览活动 → 幂等下单 → 模拟付款 → 等待订单完成 → 查询电子票 → 退出登录。
-
-也可以运行 [完整交易验收脚本](deploy/docker/verify.ps1)，验证登录、发布、下单、MQ 支付、出票、库存核对和 Tempo 链路。脚本会在本地演示库中创建测试业务数据。
-
-## 验证记录
-
-| 范围 | 已验证内容 | 记录 |
-| --- | --- | --- |
-| 核心业务 | 312 项功能与故障检查，包含真实注册发现、权限、幂等、限购、超时及迟到付款恢复 | [功能验收](docs/v1-acceptance.md) |
-| 完整容器交易 | 活动准备和发布、398 元模拟支付、2 张电子票、库存 8 / 0 / 2、Outbox 发布及消费记录核对 | [Docker 验收](docs/docker-acceptance.md) |
-| 双实例与停机 | 同键并发只生成一笔订单、租约到期后接管、优雅停止、冻结和强制停机后的读取切换 | [双实例验收](docs/docker-acceptance.md#order双实例验收) |
-| 库存与调用保护 | 9 个 JUnit 测试、141 项库存回归；50 个请求抢 10 张票，最终成功 10 个；正常准入拒绝不触发全服务熔断 | [热点库存验收](docs/hot-stock-monitoring-acceptance.md) |
-| 监控与告警 | 六种服务、7 个实例采集；11 个面板、10 条告警规则；真实服务离线告警触发及恢复消退 | [监控验收](docs/hot-stock-monitoring-acceptance.md) |
-
-复现入口位于 [deploy/verify/](deploy/verify/) 和 [deploy/docker/](deploy/docker/)。记录来自本机功能、有限突发与故障验证，不作为生产容量或多机高可用承诺；原始日志和压测数据保留在本机。
 
 ## 项目范围
 

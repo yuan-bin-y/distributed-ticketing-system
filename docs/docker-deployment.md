@@ -1,6 +1,6 @@
 # Docker完整本地部署
 
-## 这次完成了什么
+## 部署内容
 
 根目录`compose.yml`一次启动六种Java服务和七个依赖：MySQL、Redis、RabbitMQ、Nacos、Tempo、Grafana、Prometheus。双击入口默认运行两个Order实例。另有一个只执行一次的Nacos配置导入容器，成功后显示Exited(0)是正常的。
 
@@ -73,6 +73,7 @@ Nacos镜像从官方3.1.2发行包的nacos-server.jar构建，默认发行包目
 | Nacos控制台 | http://localhost:18080 | 8080 |
 | Nacos客户端地址 / gRPC | localhost:18848 / 19848 | 8848 / 9848 |
 | Grafana | http://localhost:3002 | 3000 |
+| Prometheus | http://localhost:19090 | 9090 |
 | Tempo查询 / OTLP HTTP | localhost:3201 / 4319 | 3200 / 4318 |
 
 浏览器访问Gateway的`/api/auth/ping`可检查入口。业务API统一通过18060请求；直接访问其他服务仍遵守各自身份校验。
@@ -86,11 +87,10 @@ Nacos镜像从官方3.1.2发行包的nacos-server.jar构建，默认发行包目
 - RabbitMQ账号：`ticket`，密码：`.local/docker/rabbitmq.password`。
 - JWT密钥：`.local/auth-keys/`；内部服务凭证：`.local/service-credentials/`。
 - `.local/docker/nacos/`是准备好的Nacos镜像构建材料。
-- `.local/docker/verification-result.json`保存验收标识和traceId，不保存登录密码或Token。
 
 这些文件会复用，不会每次启动重新生成。不要随意删除密码文件：数据卷仍保留原账号密码。Windows变量修改也不会自动改变已经初始化的MySQL root密码，需要在数据库中正常修改。
 
-## 查看、验收、停止
+## 状态、日志与停止
 
 ```powershell
 # 查看运行状态
@@ -99,35 +99,25 @@ Nacos镜像从官方3.1.2发行包的nacos-server.jar构建，默认发行包目
 # 查看一个服务最近100行日志（可选gateway/auth/event/order/inventory/payment/nacos）
 ./deploy/docker/status.ps1 -Service order
 
-# 真实交易验收，会新增一个用户、活动以及购买2张票的订单
-./deploy/docker/verify.ps1
-
 # 停止整套票务容器；保留所有数据卷
 ./deploy/docker/stop.ps1
 
 # 再次启动，不必重新打包Java
 ./deploy/docker/start.ps1 -SkipPackage
 
-# 检查原活动和完成订单在重新创建容器后仍存在
-./deploy/docker/verify.ps1 -PersistenceOnly
 ```
 
-verify检查：六个服务注册、管理员/用户登录、草稿库存准备和发布、重复下单幂等、398元模拟支付、MQ消费、两张电子票、重复支付不多出票、库存8/0/2、Outbox PUBLISHED、消费记录，以及Tempo中同一个traceId的MQ发送/消费Span和Grafana健康状态。
-
-Grafana中打开Explore，选择Tempo，使用验收文件的traceId查询链路；这里的Grafana端口是3002，原来的3001页面属于另一套栈。
+Grafana 中打开 Explore，选择 Ticket Tempo，使用业务响应的 `traceId` 或响应头 `X-Trace-Id` 查询链路。完整项目的 Grafana 端口是 3002。
 
 使用这套容器运行时，不必在IDEA运行同一套业务服务，也不必手动启动Windows Nacos、Redis和RabbitMQ。IDEA继续用于编辑和阅读代码。
 
 ## 两个Order实例
 
-已加入正常停机等待与Order GET网络故障切换，详见[Order停机和读取重试](order-failover.md)。POST保持原来的幂等和业务恢复机制。
+Order 支持优雅停止；Gateway 对其 GET 请求提供有界网络故障切换。POST 保持原有幂等与业务恢复机制，不自动重发。
 
 ```powershell
 # 扩容为两个Order；六个服务里的其他服务保持一个实例
 ./deploy/docker/start.ps1 -SkipPackage -OrderReplicas 2
-
-# PowerShell7执行真实多实例与故障验收；结束时恢复两个Order
-./deploy/docker/verify-multi-order.ps1
 
 # 缩回一个Order
 ./deploy/docker/start.ps1 -SkipPackage -OrderReplicas 1
@@ -135,9 +125,7 @@ Grafana中打开Explore，选择Tempo，使用验收文件的traceId查询链路
 
 Order不再绑定Windows固定18062端口；两个容器各自使用8062，经Nacos注册、由Gateway选择实例。Tempo的service.instance.id是各容器HOSTNAME，可区分两个实例。启动脚本不指定OrderReplicas时默认一个实例。
 
-验收先将8个同幂等键请求并发发到网关，用Tempo证明两个Order都处理过请求，并核对只有一个订单和一次预留。然后测试MQ支付与出票。最后暂时冻结B和Inventory，定向向A创建订单，观察其有效租约后强制停止A，立即恢复B和Inventory，让B在真实租约到期后接管，不直接修改业务表状态。验收完成后自动恢复两个Order。脚本会短暂影响本套票务栈，运行时不要同时进行其他购票操作。
-
-注册信息与网关缓存需要收敛时间；强制停止实例后的短暂请求失败被记录在验收结果中，不承诺瞬时无损切换。结果文件为.local/docker/multi-order-result.json。
+后台恢复任务使用数据库租约领取，实例退出后由其他实例在租约到期后接管。注册发现收敛和读取重试均需要时间；结果不确定的写请求应保留原幂等键查询或重试。
 
 ## 排查
 
@@ -147,12 +135,8 @@ Order不再绑定Windows固定18062端口；两个容器各自使用8062，经Na
 - 外部IDEA服务若接入这套Nacos，要使用18848、Group TICKET_DOCKER，并保证其注册地址能从容器访问；默认建议六个服务一起使用容器。
 - 不要执行down -v或volume prune来处理普通启动故障，它们可能删除数据。
 
-后续可以用这套环境演示完整购票、查看Grafana链路，再学习扩容多个实例时的负载均衡与故障恢复。
-
-本次实际运行结果见[Docker部署验收记录](docker-acceptance.md)。
-
 ## 热点库存与监控
 
 Compose默认开启Redis票档并发准入，并启动Prometheus。Grafana打开`http://localhost:3002/d/ticket-platform-overview`；Prometheus目标与告警位于`http://localhost:19090/targets`及`/alerts`。服务管理端口9000仅在Compose网络内开放。
 
-新增验证入口为`./deploy/docker/verify-hot-stock.ps1`与`./deploy/docker/verify-monitoring.ps1 -FaultTest`，详细实现与运行边界见[热点库存和指标告警](hot-stock-monitoring.md)。
+按票档的并发准入用于减少库存行竞争，MySQL 仍维护库存数量。告警覆盖服务健康、业务恢复积压、MQ 队列及采样异常，可在上述本地页面查看。

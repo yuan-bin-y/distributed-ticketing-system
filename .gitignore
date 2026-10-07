@@ -68,21 +68,12 @@ replay_pid*
 *.tmp
 *~
 
-# Personal notes and raw run output stay local. Publish only the docs below.
+# Learning walkthroughs, acceptance reports and ad hoc verification stay local.
+# Publish only project usage/deployment and API documentation below.
 # Add a !/docs/<name> entry when a new document is ready for other readers.
 /notes/
+/deploy/verify/
+/deploy/docker/verify*.ps1
 /docs/*
 !/docs/apifox/
-!/docs/v1-architecture.md
-!/docs/v1-acceptance.md
 !/docs/docker-deployment.md
-!/docs/docker-acceptance.md
-!/docs/order-failover.md
-!/docs/payment-mq.md
-!/docs/event-cache-rate-limit.md
-!/docs/event-resilience.md
-!/docs/http-resilience.md
-!/docs/http-tracing.md
-!/docs/nacos-config.md
-!/docs/hot-stock-monitoring.md
-!/docs/hot-stock-monitoring-acceptance.md

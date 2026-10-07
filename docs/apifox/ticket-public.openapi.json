@@ -1,14 +1,18 @@
 {
   "openapi": "3.0.3",
   "info": {
-    "title": "分布式票务平台 第一版网关API",
-    "version": "1.0.0",
-    "description": "基于当前源码整理。全部公开请求经过Gateway；用户身份从Bearer JWT及Redis会话取得，不接受正文userId。模拟支付须启用PAYMENT_SIMULATION_ENABLED。202和支付SUCCESS不等于完成出票；查询订单到COMPLETED。时间为东八区LocalDateTime无时区后缀。金额为人民币BigDecimal。传输层及Gateway自身异常可能使用不同于业务Result的错误正文。 第二版默认启用活动展示缓存和活动/订单入口限流：超额429，缓存重建繁忙或限流Redis不可用503。"
+    "title": "分布式票务交易平台 公开API",
+    "version": "2.0.0",
+    "description": "当前项目公开HTTP契约，全部请求经过Gateway。默认Docker网关18060，IDEA开发网关8060。身份来自Bearer JWT及Redis会话，不接收正文userId。活动展示缓存、网关限流、熔断隔离及读取故障切换已接入。Docker默认启用RabbitMQ付款通知；MQ和Outbox不新增公开HTTP接口。202或支付SUCCESS不表示已经出票，查询订单至COMPLETED。模拟支付需启用PAYMENT_SIMULATION_ENABLED。时间为东八区LocalDateTime，金额为人民币BigDecimal。网关传输错误可能使用框架JSON，不保证业务Result格式。"
   },
   "servers": [
     {
+      "url": "http://localhost:18060",
+      "description": "Docker完整项目网关（默认）"
+    },
+    {
       "url": "http://localhost:8060",
-      "description": "本地开发"
+      "description": "IDEA本地开发网关"
     }
   ],
   "security": [
@@ -110,10 +114,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -208,10 +231,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -305,10 +347,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -398,10 +459,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -460,10 +540,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -507,26 +606,6 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
           "429": {
             "description": "网关令牌桶额度不足：RATE_LIMITED",
             "headers": {
@@ -547,6 +626,32 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
                 }
               }
             }
@@ -557,7 +662,7 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
@@ -582,6 +687,25 @@
               "minimum": 1,
               "maximum": 100,
               "default": 20
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -635,26 +759,6 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
           "429": {
             "description": "网关令牌桶额度不足：RATE_LIMITED",
             "headers": {
@@ -671,6 +775,32 @@
                 }
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
             "content": {
               "application/json": {
                 "schema": {
@@ -697,10 +827,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -754,26 +903,6 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
           "429": {
             "description": "网关令牌桶额度不足：RATE_LIMITED",
             "headers": {
@@ -790,6 +919,32 @@
                 }
               }
             },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
             "content": {
               "application/json": {
                 "schema": {
@@ -816,10 +971,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -879,10 +1053,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -992,10 +1185,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1150,10 +1362,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -1274,10 +1505,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -1398,10 +1648,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -1484,6 +1753,36 @@
               }
             }
           },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务内部错误",
             "content": {
@@ -1523,30 +1822,6 @@
                 }
               }
             }
-          },
-          "429": {
-            "description": "网关令牌桶额度不足：RATE_LIMITED",
-            "headers": {
-              "Retry-After": {
-                "description": "建议等待秒数",
-                "schema": {
-                  "example": "1",
-                  "type": "string"
-                }
-              },
-              "X-Trace-Id": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
           }
         },
         "parameters": [
@@ -1554,10 +1829,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1584,7 +1878,7 @@
         ],
         "summary": "创建或返回原订单",
         "operationId": "createOrder",
-        "description": "当前用户来自Token，不接受正文userId。200也可能返回CREATE_FAILED等明确业务状态，必须检查data.status。202为STOCK_PENDING或CLOSING；超时不能推断订单未创建，保持原幂等键和参数查询/重试。",
+        "description": "当前用户来自Token，不接受正文userId。200也可能返回CREATE_FAILED等明确业务状态，必须检查data.status。202为STOCK_PENDING或CLOSING；超时不能推断订单未创建，保持原幂等键和参数查询/重试。 热点库存准入暂满或远程结果不确定时，订单可能保持STOCK_PENDING，由后台使用原请求恢复。不要更换幂等键；公开订单接口不直接返回库存内部的STOCK_BUSY。写请求不会由网关自动换实例重发。",
         "responses": {
           "200": {
             "description": "成功",
@@ -1605,7 +1899,7 @@
             }
           },
           "202": {
-            "description": "已可靠保存订单，仍处于STOCK_PENDING或CLOSING，请按原订单号查询",
+            "description": "订单已持久化，当前STOCK_PENDING或CLOSING；保留原幂等键和参数，按原订单号查询，不表示支付或出票成功",
             "headers": {
               "X-Trace-Id": {
                 "description": "请求追踪标识",
@@ -1672,6 +1966,36 @@
               }
             }
           },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务内部错误",
             "content": {
@@ -1711,30 +2035,6 @@
                 }
               }
             }
-          },
-          "429": {
-            "description": "网关令牌桶额度不足：RATE_LIMITED",
-            "headers": {
-              "Retry-After": {
-                "description": "建议等待秒数",
-                "schema": {
-                  "example": "1",
-                  "type": "string"
-                }
-              },
-              "X-Trace-Id": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
           }
         },
         "parameters": [
@@ -1742,10 +2042,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -1773,7 +2092,7 @@
         ],
         "summary": "查询本人订单",
         "operationId": "getOwnedOrder",
-        "description": "其他用户的订单按不存在处理。COMPLETED表示已出票；STOCK_PENDING/CLOSING/PAYMENT_CONFIRMING等由后台继续恢复。",
+        "description": "其他用户的订单按不存在处理。COMPLETED表示已出票；STOCK_PENDING/CLOSING/PAYMENT_CONFIRMING等由后台继续恢复。 网关仅在GET网络故障且响应未提交时进行有界换实例重试；不重试业务HTTP状态。无可用实例或重试耗尽可返回503，总时间预算耗尽可返回504。",
         "responses": {
           "200": {
             "description": "成功",
@@ -1843,26 +2162,6 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
           "429": {
             "description": "网关令牌桶额度不足：RATE_LIMITED",
             "headers": {
@@ -1883,6 +2182,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "业务存储或会话暂时不可用，或网关读取故障切换后仍无可用实例；网关错误可能使用框架JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GatewayTransportError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "网关Order读取总时间预算耗尽；框架错误JSON，不保证业务code字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayTransportError"
                 }
               }
             }
@@ -1905,10 +2247,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -1991,6 +2352,36 @@
               }
             }
           },
+          "429": {
+            "description": "网关令牌桶额度不足：RATE_LIMITED",
+            "headers": {
+              "Retry-After": {
+                "description": "建议等待秒数",
+                "schema": {
+                  "example": "1",
+                  "type": "string"
+                }
+              },
+              "X-Trace-Id": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
           "500": {
             "description": "服务内部错误",
             "content": {
@@ -2030,30 +2421,6 @@
                 }
               }
             }
-          },
-          "429": {
-            "description": "网关令牌桶额度不足：RATE_LIMITED",
-            "headers": {
-              "Retry-After": {
-                "description": "建议等待秒数",
-                "schema": {
-                  "example": "1",
-                  "type": "string"
-                }
-              },
-              "X-Trace-Id": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
           }
         },
         "parameters": [
@@ -2073,10 +2440,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2089,7 +2475,7 @@
         ],
         "summary": "查询本人电子票",
         "operationId": "getOwnedTickets",
-        "description": "返回orderStatus及tickets；未出票时列表为空。票号独立，当前不提供二维码入场核验。",
+        "description": "返回orderStatus及tickets；未出票时列表为空。票号独立，当前不提供二维码入场核验。 网关仅在GET网络故障且响应未提交时进行有界换实例重试；不重试业务HTTP状态。无可用实例或重试耗尽可返回503，总时间预算耗尽可返回504。",
         "responses": {
           "200": {
             "description": "成功",
@@ -2159,26 +2545,6 @@
               }
             }
           },
-          "500": {
-            "description": "服务内部错误",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "存储繁忙、依赖不可用，或缓存/限流暂时不可用（SERVICE_BUSY）",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
-                }
-              }
-            }
-          },
           "429": {
             "description": "网关令牌桶额度不足：RATE_LIMITED",
             "headers": {
@@ -2199,6 +2565,49 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResult"
+                },
+                "example": {
+                  "code": "RATE_LIMITED",
+                  "message": "请求过于频繁，请稍后重试",
+                  "data": null,
+                  "traceId": "0123456789abcdef0123456789abcdef"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "业务存储或会话暂时不可用，或网关读取故障切换后仍无可用实例；网关错误可能使用框架JSON",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GatewayTransportError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "网关Order读取总时间预算耗尽；框架错误JSON，不保证业务code字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayTransportError"
                 }
               }
             }
@@ -2221,10 +2630,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2237,7 +2665,7 @@
         ],
         "summary": "Order连通检查",
         "operationId": "orderPing",
-        "description": "经Gateway需要用户Token。直连Order该ping可匿名；只证明HTTP已执行。",
+        "description": "经Gateway需要用户Token。直连Order该ping可匿名；只证明HTTP已执行。 网关仅在GET网络故障且响应未提交时进行有界换实例重试；不重试业务HTTP状态。无可用实例或重试耗尽可返回503，总时间预算耗尽可返回504。",
         "responses": {
           "200": {
             "description": "成功",
@@ -2288,11 +2716,28 @@
             }
           },
           "503": {
-            "description": "存储繁忙或依赖服务不可用",
+            "description": "业务存储或会话暂时不可用，或网关读取故障切换后仍无可用实例；网关错误可能使用框架JSON",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResult"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResult"
+                    },
+                    {
+                      "$ref": "#/components/schemas/GatewayTransportError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "网关Order读取总时间预算耗尽；框架错误JSON，不保证业务code字段",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GatewayTransportError"
                 }
               }
             }
@@ -2303,10 +2748,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2427,10 +2891,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2443,7 +2926,7 @@
         ],
         "summary": "模拟付款成功",
         "operationId": "simulatePaymentSuccess",
-        "description": "需要当前用户Token，且Payment开启PAYMENT_SIMULATION_ENABLED=true。无请求正文，不接收用户金额或付款时间。重复成功不重复出票。付款后异步通知及履约，请查询Order至COMPLETED。",
+        "description": "需要当前用户Token，且Payment开启PAYMENT_SIMULATION_ENABLED=true。无请求正文，不接收用户金额或付款时间。重复成功不重复出票。付款后异步通知及履约，请查询Order至COMPLETED。 Docker的MQ模式在同一事务保存付款成功与Outbox事件，消费者提交付款依据后再由后台确认库存及出票；返回成功不表示MQ已消费或电子票已生成。",
         "responses": {
           "200": {
             "description": "成功",
@@ -2551,10 +3034,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2633,10 +3135,29 @@
             "name": "X-Trace-Id",
             "in": "header",
             "required": false,
-            "description": "可选请求追踪标识；不提供时由服务生成",
+            "description": "兼容追踪编号；有服务端Span时使用其真实traceId，W3C traceparent上下文优先。通常留空，以响应X-Trace-Id查询链路。",
             "schema": {
               "type": "string",
               "example": "0123456789abcdef0123456789abcdef"
+            }
+          },
+          {
+            "name": "traceparent",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C追踪上下文；通常留空由服务生成。需要延续上游链路时传入有效上下文。",
+            "schema": {
+              "type": "string",
+              "example": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01"
+            }
+          },
+          {
+            "name": "tracestate",
+            "in": "header",
+            "required": false,
+            "description": "可选W3C厂商上下文，配合有效traceparent传递；通常留空。",
+            "schema": {
+              "type": "string"
             }
           }
         ]
@@ -2715,7 +3236,8 @@
               "INTERNAL_ERROR",
               "UPSTREAM_UNAVAILABLE",
               "UPSTREAM_TIMEOUT",
-              "INVALID_UPSTREAM_RESPONSE"
+              "INVALID_UPSTREAM_RESPONSE",
+              "RATE_LIMITED"
             ]
           },
           "message": {
@@ -4217,6 +4739,11 @@
           "reversalStatus",
           "createdAt"
         ]
+      },
+      "GatewayTransportError": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "网关网络故障或读取总预算超时的框架错误JSON；字段由框架决定，不保证code/data/traceId等业务Result字段。按HTTP状态判断传输失败。"
       }
     },
     "securitySchemes": {
