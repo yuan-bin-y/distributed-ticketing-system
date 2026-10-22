@@ -30,6 +30,11 @@ public class OutboxEvent {
     private String status;
     /** 发布尝试次数，当前初始为零。 */
     private Integer attemptCount;
+    /** 当前自动发布周期的尝试次数；人工重放只重置此值。 */
+    private Integer cycleAttemptCount;
+    private LocalDateTime cycleStartedAt;
+    /** 人工处理原因代码，不包含密码、连接串或完整消息。 */
+    private String reviewReason;
     /** 后台发送器允许尝试的时间；发送器后续接入。 */
     private LocalDateTime nextAttemptAt;
     /** 后续多实例领取令牌，过期旧任务不能覆盖新领取者。 */

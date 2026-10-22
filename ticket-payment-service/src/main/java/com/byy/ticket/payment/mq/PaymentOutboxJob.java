@@ -13,8 +13,12 @@ import java.util.UUID;
 public class PaymentOutboxJob {
     private final OutboxEventMapper events;
     private final PaymentEventPublisher publisher;
-    public PaymentOutboxJob(OutboxEventMapper events, PaymentEventPublisher publisher) {
-        this.events=events; this.publisher=publisher;
+    private final OutboxRetryPolicy policy;
+    private final OutboxMessageValidator validator;
+    private final java.time.Clock clock;
+    public PaymentOutboxJob(OutboxEventMapper events, PaymentEventPublisher publisher,
+                            OutboxRetryPolicy policy, OutboxMessageValidator validator, java.time.Clock clock) {
+        this.events=events; this.publisher=publisher; this.policy=policy; this.validator=validator; this.clock=clock;
     }
     @Scheduled(fixedDelayString="${ticket.mq.outbox-delay-ms:1000}")
     public void publishDue() {
@@ -23,13 +27,18 @@ public class PaymentOutboxJob {
             if(events.claim(candidate.getId(),token)!=1) continue;
             var event=events.selectById(candidate.getId());
             try {
+                validator.validate(event);
                 publisher.publish(event);
                 events.published(event.getId(),token);
             } catch (Exception failure) {
                 if (failure instanceof InterruptedException) Thread.currentThread().interrupt();
-                String error=failure.getClass().getSimpleName()+": "+failure.getMessage();
-                events.retry(event.getId(),token,error.substring(0,Math.min(error.length(),1000)));
-                LoggerFactory.getLogger(getClass()).warn("支付事件发送失败 eventId={}",event.getEventId());
+                String reason=policy.reviewReason(event,failure,java.time.LocalDateTime.now(clock));
+                // 不把异常消息中的连接串或凭证复制到数据库和日志。
+                String error=failure.getClass().getSimpleName();
+                if(reason==null) events.retry(event.getId(),token,error);
+                else if(events.review(event.getId(),token,reason,error)==1)
+                    LoggerFactory.getLogger(getClass()).error("支付事件待人工核对 eventId={} reason={}",event.getEventId(),reason);
+                if (Thread.currentThread().isInterrupted()) return;
             }
         }
     }

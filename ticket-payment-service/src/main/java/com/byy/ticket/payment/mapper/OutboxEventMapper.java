@@ -13,7 +13,7 @@ public interface OutboxEventMapper extends BaseMapper<OutboxEvent> {
     java.util.List<OutboxEvent> selectDue();
 
     @Update("UPDATE t_outbox_event SET status='SENDING',lease_token=#{token},"
-            + "lease_until=TIMESTAMPADD(SECOND,30,CURRENT_TIMESTAMP(3)),attempt_count=attempt_count+1 "
+            + "lease_until=TIMESTAMPADD(SECOND,30,CURRENT_TIMESTAMP(3)),attempt_count=attempt_count+1,cycle_attempt_count=cycle_attempt_count+1 "
             + "WHERE id=#{id} AND ((status='PENDING' AND next_attempt_at<=CURRENT_TIMESTAMP(3)) "
             + "OR (status='SENDING' AND lease_until<=CURRENT_TIMESTAMP(3)))")
     int claim(@Param("id") Long id,@Param("token") String token);
@@ -28,6 +28,12 @@ public interface OutboxEventMapper extends BaseMapper<OutboxEvent> {
             + "next_attempt_at=TIMESTAMPADD(SECOND,LEAST(300,5*POW(2,LEAST(attempt_count-1,6))),CURRENT_TIMESTAMP(3)) "
             + "WHERE id=#{id} AND status='SENDING' AND lease_token=#{token} AND lease_until>CURRENT_TIMESTAMP(3)")
     int retry(@Param("id") Long id,@Param("token") String token,@Param("error") String error);
+
+    /** 仍持有有效租约才能暂停自动发布；过期发送器不能覆盖新任务。 */
+    @Update("UPDATE t_outbox_event SET status='REVIEW_REQUIRED',lease_token=NULL,lease_until=NULL,"
+            + "review_reason=#{reason},last_error=#{error} WHERE id=#{id} AND status='SENDING' "
+            + "AND lease_token=#{token} AND lease_until>CURRENT_TIMESTAMP(3)")
+    int review(@Param("id") Long id,@Param("token") String token,@Param("reason") String reason,@Param("error") String error);
     /** 用支付编号查询原支付成功事件；重复付款不能重置发送状态或生成新编号。 */
     @Select("SELECT * FROM t_outbox_event WHERE event_type='PAYMENT_SUCCEEDED' AND aggregate_id=#{paymentNo}")
     OutboxEvent selectPaymentSucceeded(@Param("paymentNo") String paymentNo);
