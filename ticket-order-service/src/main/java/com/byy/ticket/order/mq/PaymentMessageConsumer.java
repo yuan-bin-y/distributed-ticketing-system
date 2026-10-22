@@ -31,15 +31,19 @@ public class PaymentMessageConsumer {
     private final RabbitTemplate rabbit;
     private final String exchange;
     private final TraceSupport traces;
+    private final PaymentForwardingBackoff backoff;
     public PaymentMessageConsumer(ObjectMapper json,PaymentClient payments,PaymentMessageTransaction transaction,
-                                  RabbitTemplate rabbit,@Value("${ticket.mq.prefix:ticket}") String prefix, TraceSupport traces) {
+                                  RabbitTemplate rabbit,@Value("${ticket.mq.prefix:ticket}") String prefix, TraceSupport traces,
+                                  PaymentForwardingBackoff backoff) {
         this.json=json;this.payments=payments;this.transaction=transaction;
         this.rabbit=rabbit;this.exchange=prefix+".payment.exchange";
         this.traces=traces;
+        this.backoff=backoff;
     }
     @RabbitListener(queues="${ticket.mq.prefix:ticket}.order.payment-succeeded",ackMode="MANUAL")
     public void consume(Message message,Channel channel) throws Exception {
         long tag=message.getMessageProperties().getDeliveryTag();
+        backoff.delivered(Boolean.TRUE.equals(message.getMessageProperties().getRedelivered()));
         try (var scope=traces.resume(TraceSupport.Snapshot.from(message.getMessageProperties().getHeaders()),
                 "payment.succeeded consume", Span.Kind.CONSUMER)) {
             scope.tag("messaging.system", "rabbitmq");
@@ -64,11 +68,16 @@ public class PaymentMessageConsumer {
                 scope.error(failure);
                 try {
                     forwardFailure(message,failure);
+                    backoff.recovered();
                 } catch(Exception forwardingFailure) {
                     // MANUAL模式显式保留原投递；重试目标不可用时不能删除原消息。
-                    org.slf4j.LoggerFactory.getLogger(getClass()).warn("支付消息转发未确认，保留原消息",
-                            forwardingFailure);
-                    Thread.sleep(500);
+                    long delay=backoff.failureDelayMillis();
+                    org.slf4j.LoggerFactory.getLogger(getClass()).warn("支付消息转发未确认，保留原消息 backoffMs={} failureType={}",
+                            delay,forwardingFailure.getClass().getSimpleName());
+                    // 仅占用专用消费线程；prefetch=1限制未确认消息，HTTP线程不参与等待。
+                    // 中断或进程退出时仍不ACK，连接关闭后Broker会恢复未确认投递。
+                    try { Thread.sleep(delay); }
+                    catch(InterruptedException interrupted) { Thread.currentThread().interrupt(); }
                     channel.basicNack(tag,false,true);
                     return;
                 }

@@ -51,3 +51,13 @@ groups:
         for: 20s
         labels: {severity: warning}
         annotations: {summary: "支付队列指标读取失败"}
+      - alert: TicketPaymentForwardingStalled
+        expr: ticket_mq_forwarding_consecutive_failures >= 3
+        for: 30s
+        labels: {severity: warning}
+        annotations: {summary: "支付重试或死信转发持续失败，消费者正在退避并保留原消息"}
+      - alert: TicketPaymentRedeliveryHigh
+        expr: sum(rate(ticket_mq_deliveries_total{redelivered="true"}[2m])) > 1
+        for: 1m
+        labels: {severity: warning}
+        annotations: {summary: "支付消息持续重新投递，请检查消费失败和转发目标"}

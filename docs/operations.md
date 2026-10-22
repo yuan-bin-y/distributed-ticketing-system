@@ -23,3 +23,18 @@
 最终仍需检查订单、消费记录及电子票。
 
 相关参数：`ticket.mq.outbox-max-attempts`、`ticket.mq.outbox-max-age`。
+
+## 消费转发故障
+
+业务处理失败仍按原有三档延迟重试，之后保存到死信队列。若重试/死信转发本身失败，
+专用消费线程按 1、2、4、8、16、30 秒上限并带随机抖动等待，再重新入队原投递，
+不 ACK 未确认的转发。进程内所有消息共享失败进度，重新投递和切换消息不会重置退避。
+目标转发得到 Confirm 且未收到 Return 后才重置进度。
+
+`prefetch=1` 限制每个消费线程持有的未确认消息；多个实例各自退避。最大等待可配置，
+启动时限制为不超过一分钟。进程退出、等待中断和连接断开均由 Broker 保留未确认消息。
+主队列继续保留无限投递，以免单纯达到投递次数就丢弃付款线索。
+
+监控 `ticket_mq_forwarding_failures_total`、`ticket_mq_forwarding_consecutive_failures`、
+`ticket_mq_forwarding_backoff_milliseconds` 和 `ticket_mq_deliveries_total`；
+`TicketPaymentForwardingStalled` 与 `TicketPaymentRedeliveryHigh` 提供告警。
