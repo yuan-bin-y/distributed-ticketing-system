@@ -1,0 +1,17 @@
+# 可选的单入口代理示例；只信任这个固定代理地址，网关继续保留原始remoteAddress。
+services:
+  gateway:
+    environment:
+      TICKET_RATE_LIMIT_TRUSTED_PROXIES: 172.31.244.250/32
+  edge:
+    image: nginx:1.28-alpine
+    ports: ["127.0.0.1:18000:8080"]
+    volumes: ["./deploy/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro"]
+    depends_on:
+      gateway: {condition: service_healthy}
+    networks:
+      default: {ipv4_address: 172.31.244.250}
+networks:
+  default:
+    ipam:
+      config: [{subnet: 172.31.244.0/24}]

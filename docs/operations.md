@@ -56,3 +56,21 @@
 订单快照写入失败、旧租约覆盖保护、消费事务回滚、业务提交后 ACK 失败再投递、
 付款成功与 Outbox 原子提交，以及发布暂时失败后的原事件恢复。
 ACK 窗口使用真实数据库提交加模拟 ACK 连接异常；整个进程被强制终止的端到端演练仍应在部署环境执行。
+
+## 可信代理与客户端限流
+
+默认不信任任何转发头。使用 `ticket.rate-limit.trusted-proxies` 或环境变量
+`TICKET_RATE_LIMIT_TRUSTED_PROXIES` 明确列出代理的 IP/CIDR，例如 `10.0.0.10/32,fd00::10/128`。
+保留 `server.forward-headers-strategy=none`，避免框架提前替换原始对端地址。
+仅对可信直连代理提供的 `X-Forwarded-For` 从右向左解析，遇到第一个非可信地址就停止；
+重复头、主机名、非法地址和超长代理链回退到直连地址。已认证请求仍优先按用户限流。
+
+单入口 Nginx 示例覆盖客户端转发头，部署前确保网关只接受入口代理访问：
+
+```powershell
+docker compose -f compose.yml -f compose.proxy.yml up -d
+# 通过 http://localhost:18000 访问；演示代理固定为172.31.244.250
+```
+
+示例网段如与本机网络冲突，应同时调整 Compose 网段、代理固定地址和可信代理配置。
+多级代理需逐级规范化转发头并分别限制网络来源，禁止配置覆盖全部地址的可信范围。

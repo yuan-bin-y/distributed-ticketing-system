@@ -28,6 +28,7 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
         +"redis.call('HMSET',KEYS[i],'tokens',tokens[i],'time',now); "
         +"redis.call('PEXPIRE',KEYS[i],math.ceil(caps[i]/rates[i]*2000)+1000) end; return ok",Long.class);
     private final ReactiveStringRedisTemplate redis; private final GatewaySecurityResponses responses;
+    private final ClientIpResolver clientIp;
     private final boolean enabled; private final String prefix;
     private final int eventRate,eventBurst,eventClientRate,eventClientBurst,orderRate,orderBurst,orderClientRate,orderClientBurst;
     public GatewayRateLimitFilter(ReactiveStringRedisTemplate redis,GatewaySecurityResponses responses,
@@ -40,10 +41,11 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
         @Value("${ticket.rate-limit.order-rate:100}") int orderRate,
         @Value("${ticket.rate-limit.order-burst:200}") int orderBurst,
         @Value("${ticket.rate-limit.order-client-rate:5}") int orderClientRate,
-        @Value("${ticket.rate-limit.order-client-burst:10}") int orderClientBurst) {
+        @Value("${ticket.rate-limit.order-client-burst:10}") int orderClientBurst,ClientIpResolver clientIp) {
         if(java.util.stream.IntStream.of(eventRate,eventBurst,eventClientRate,eventClientBurst,orderRate,orderBurst,
             orderClientRate,orderClientBurst).anyMatch(v->v<1))throw new IllegalArgumentException("限流参数必须大于零");
         this.redis=redis;this.responses=responses;this.enabled=enabled;this.prefix=prefix;
+        this.clientIp=clientIp;
         this.eventRate=eventRate;this.eventBurst=eventBurst;this.eventClientRate=eventClientRate;this.eventClientBurst=eventClientBurst;
         this.orderRate=orderRate;this.orderBurst=orderBurst;this.orderClientRate=orderClientRate;this.orderClientBurst=orderClientBurst;
     }
@@ -56,9 +58,7 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
         boolean order=path.equals("/api/orders")||path.startsWith("/api/orders/");
         if(!enabled||(!event&&!order)||path.endsWith("/ping"))return chain.filter(exchange);
         String scope=event?"events":"orders";
-        // 不信任客户端X-Forwarded-For或X-User-Id；反向代理部署需另行配置可信代理边界。
-        var address=exchange.getRequest().getRemoteAddress();
-        String ip=address==null?"unknown":address.getAddress().getHostAddress();
+        String ip=clientIp.resolve(exchange.getRequest());
         return exchange.getPrincipal().map(p->"user:"+p.getName()).defaultIfEmpty("ip:"+ip).flatMap(identity->{
             String client=hash(identity);
             List<String> args=List.of(Integer.toString(event?eventRate:orderRate),Integer.toString(event?eventBurst:orderBurst),
