@@ -38,3 +38,21 @@
 监控 `ticket_mq_forwarding_failures_total`、`ticket_mq_forwarding_consecutive_failures`、
 `ticket_mq_forwarding_backoff_milliseconds` 和 `ticket_mq_deliveries_total`；
 `TicketPaymentForwardingStalled` 与 `TicketPaymentRedeliveryHigh` 提供告警。
+
+## 自动回归
+
+```powershell
+./deploy/tests/run-regression.ps1
+# 显式开启真实MySQL事务/并发测试，读取已有Windows数据库变量
+./deploy/tests/run-regression.ps1 -Integration
+```
+
+集成测试连接默认 `jdbc:mysql://127.0.0.1:3306/`，可用 `TICKET_TEST_MYSQL_BASE` 改为独立测试实例。
+账号需要创建/删除测试库和创建触发器权限。每个测试类生成 `ticket_test_<随机编号>` 库，
+运行当前 Flyway 迁移，结束只删除自己创建的库，不向业务库插入或清理数据。
+测试失败时命令返回非零，详细结果在各模块 `target/surefire-reports`，不会提交运行日志。
+
+覆盖库存最后一张票竞争、丢失响应后的幂等恢复、库存写入失败回滚、确认与释放竞争、
+订单快照写入失败、旧租约覆盖保护、消费事务回滚、业务提交后 ACK 失败再投递、
+付款成功与 Outbox 原子提交，以及发布暂时失败后的原事件恢复。
+ACK 窗口使用真实数据库提交加模拟 ACK 连接异常；整个进程被强制终止的端到端演练仍应在部署环境执行。
