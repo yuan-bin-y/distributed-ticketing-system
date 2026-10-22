@@ -11,6 +11,12 @@ tests:
         values: '1+0x20'
       - series: 'ticket_mq_queue_messages{queue="dead",application="ticket-order-service"}'
         values: '3+0x20'
+      - series: 'ticket_workflow_pending{workflow="payment_outbox_review",application="ticket-payment-service"}'
+        values: '1+0x20'
+      - series: 'ticket_mq_forwarding_consecutive_failures{application="ticket-order-service"}'
+        values: '3+0x20'
+      - series: 'ticket_mq_deliveries_total{redelivered="true",application="ticket-order-service"}'
+        values: '0+10x40'
     alert_rule_test:
       - eval_time: 40s
         alertname: TicketServiceUnavailable
@@ -27,8 +33,23 @@ tests:
         exp_alerts:
           - exp_labels: {workflow: order_review, application: ticket-order-service, severity: warning}
             exp_annotations: {summary: "存在需要人工核对的业务记录：order_review"}
+          - exp_labels: {workflow: payment_outbox_review, application: ticket-payment-service, severity: warning}
+            exp_annotations: {summary: "存在需要人工核对的业务记录：payment_outbox_review"}
       - eval_time: 20s
         alertname: TicketPaymentDeadLetters
         exp_alerts:
           - exp_labels: {queue: dead, application: ticket-order-service, severity: warning}
             exp_annotations: {summary: "支付消息进入死信，请核对后使用现有重放工具"}
+      - eval_time: 40s
+        alertname: TicketPaymentForwardingStalled
+        exp_alerts:
+          - exp_labels: {application: ticket-order-service, severity: warning}
+            exp_annotations: {summary: "支付重试或死信转发持续失败，消费者正在退避并保留原消息"}
+      - eval_time: 40s
+        alertname: TicketPaymentRedeliveryHigh
+        exp_alerts: []
+      - eval_time: 150s
+        alertname: TicketPaymentRedeliveryHigh
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: "支付消息持续重新投递，请检查消费失败和转发目标"}

@@ -94,3 +94,103 @@ Event 启动时检查 `planned-instances × database-concurrency ≤ cluster-loa
 也不构成分布式并发锁。扩容工具必须同步更新计划，不能只增加副本。
 监控 `ticket_event_database_planned_loads`、`ticket_event_database_planned_connections` 和 Hikari
 活跃/等待连接，结合 SQL 延迟与数据库 CPU/IO 压测调整预算；示例数值不是生产吞吐承诺。
+
+## 独立 HA 部署
+
+日常 `ticket-platform` 保留原来的轻量部署。`deploy/ha/` 以独立 `ticket-ha` 项目提供多节点拓扑，
+使用自己的数据卷、网络和 `.local/ha/` 私有配置，业务数据不会自动从日常库迁移。
+
+| 组件 | 拓扑与客户端接入 |
+| --- | --- |
+| MySQL | 三节点 Group Replication 单主模式；两个 HAProxy 只转发到 `ONLINE PRIMARY`，JDBC 配置两个代理地址 |
+| Redis | 一个主节点、两个副本、三个 Sentinel，quorum=2；Spring 使用 Sentinel 发现主节点 |
+| RabbitMQ | 三节点集群，业务队列为三成员 quorum 队列；客户端配置三个 Broker 地址 |
+| Nacos | 三节点、统一身份密钥及外部 MySQL；客户端配置三个注册地址 |
+| 业务与入口 | 可选六种服务各两个副本，两个 Nginx 入口；代理覆盖转发头，网关只信任这两个地址 |
+
+JDBC使用普通多主机故障切换URL `jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/...`，
+保留一个物理会话直至连接故障，不使用逐事务轮换的 `loadbalance` 模式，避免影响Flyway会话命名锁。
+数据库切换时已有事务可能报错，仍由业务幂等与事实核对恢复，不承诺所有在途请求都无感成功。
+
+MySQL 主库与代理不是五套独立数据库集群；五个逻辑业务库共享同一个三节点复制组。
+Redis 使用异步复制，Sentinel 不能承诺故障时零数据丢失。实际库存与付款事实仍保存在 MySQL，
+Redis 故障后的网络结果不确定仍由已有幂等、核对和恢复任务处理。
+
+### 启动与停止
+
+需要 Docker Linux 引擎、JDK17、已打包的业务 JAR、Nacos3.1.2 官方发行包。
+完整拓扑运行大量进程，建议为 Docker 分配至少16GiB内存；资源不足时先只启动基础设施，
+不要与日常完整部署同时运行。基础镜像和 HAProxy 构建依赖需要能访问镜像仓库与 Alpine 软件源。
+
+```powershell
+# 在项目根目录；默认读取.local/nacos-3.1.2/nacos，也可指定-NacosHome
+./deploy/ha/start.ps1
+
+# 完成Maven package后，构建并启动业务副本；不会自动重新打包旧JAR
+./deploy/ha/start.ps1 -WithApplications -JdkHome '你的JDK17目录'
+
+# 内存较少时验证基础设施与业务接入，每种业务只运行一个副本；此模式没有业务副本冗余
+./deploy/ha/start.ps1 -WithApplications -ApplicationReplicas 1 -JdkHome '你的JDK17目录'
+
+# 只停止ticket-ha容器，保留数据卷、凭证和备份
+./deploy/ha/stop.ps1
+```
+
+完整业务入口为 `http://localhost:18070` 与 `http://localhost:18071`。
+管理员为 `ha_admin`，密码文件为 `.local/ha/auth-admin-password`；Nacos管理账号为 `nacos`，
+密码文件为 `.local/ha/nacos-admin-password`。随机密码由脚本首次生成，从只读文件挂载读取；
+已有数据卷的凭证不得随意重新生成。JWT密钥和内部调用凭证复用项目已有私有目录。
+签名私钥与管理员初始化密码只挂载到Auth；服务调用凭证按调用方向分配给对应服务。
+
+示例使用 `172.30.246.0/24` 固定容器网段，避免节点停止造成DNS阻塞或旧地址残留。
+若网段冲突，需要同步修改 Compose、Redis/Sentinel、Nacos成员配置、网关可信代理和探针地址。
+仅数据库代理及业务入口绑定本机回环端口；集群管理端口不直接向外暴露。
+
+### 故障演练
+
+```powershell
+./deploy/ha/verify.ps1 -JdkHome '你的JDK17目录' -RestoreCheck
+
+# 业务副本已启动时，验证登录、发布、MQ付款、出票和数据库事实；会保留本次随机业务记录
+./deploy/ha/verify-business.ps1
+```
+
+脚本只操作当前 `ticket-ha` 项目，依次停止一个节点并验证：
+
+1. MySQL自动选主、原提交保留、两个代理可以继续写入，旧主重新加入三节点组。
+2. Redis已由两个副本确认的探针数据在切换后可读，新主可以继续写入。
+3. RabbitMQ探针队列Leader停止后，原持久消息保留，仍能发布Confirm并消费新消息。
+4. Nacos一个节点停止后，其余节点仍能鉴权并读取已保存配置。
+5. 备份SHA256通过，恢复到独立MySQL数据卷后核对原探针记录。
+
+停止的节点在 `finally` 中恢复；终端被强制结束时仍应检查容器状态。
+SQL、Redis和HTTP探针设有超时，失败返回非零。原始日志和结果只保存在 `.local/ha/`。
+三节点多数派只允许同时故障一个节点；多数派丢失时停止写入是预期保护。
+MySQL启动脚本仅允许在三个全新空库上引导新组，已有业务库不会自动清空GTID或强制覆盖成员。
+整个MySQL组断电后若不能自行恢复，应先停止业务写入、核对所有成员的GTID和已接收事务，
+选择最完整的成员按MySQL Group Replication灾难恢复流程人工恢复；禁止直接删卷或重建空组。
+
+### 备份与隔离恢复
+
+```powershell
+$backup = ./deploy/ha/backup.ps1
+./deploy/ha/restore-check.ps1 -BackupDirectory $backup
+```
+
+默认备份五个业务库与Nacos库，逐库 `--single-transaction` 导出并生成SHA256清单。
+它不是跨库同一时点快照；全系统一致性恢复需安排停止写入的备份窗口，或结合binlog与交易事实核对。
+备份包含用户与支付数据，文件留在忽略目录；长期保存应另行加密并复制到独立故障域。
+
+恢复工具只接受本项目私有目录中的校验通过文件，目标固定为独立 `mysql-restore` 数据卷，
+遇到已有同名库直接拒绝覆盖。重复运行 `-RestoreCheck` 时可先改为不带此参数完成节点切换演练，
+再单独检查已有恢复库；需要再次完整恢复时准备新的隔离目标，不能对原业务库删除后重试。
+`verify.ps1`额外核对恢复后的原探针记录，普通恢复工具输出恢复表数量以便进一步业务核对。
+
+### 生产环境边界
+
+同一Docker Desktop中的多容器只能验证单容器故障处理，宿主机和存储仍是共同故障域。
+跨服务器部署必须把副本分布到独立节点，提供冗余入口地址或外部负载均衡、TLS和网络隔离，
+替换示例root数据库连接为各服务最小权限账号，接入独立告警通知与异地备份，
+并在实际环境验证分区、整机故障、全停恢复、容量与RPO/RTO。
+当前可选HA栈不包含额外监控集群；日常部署的Prometheus/Grafana仍保留，
+跨环境接入时应另外配置采集目标。项目中的支付、冲正仍为模拟业务。

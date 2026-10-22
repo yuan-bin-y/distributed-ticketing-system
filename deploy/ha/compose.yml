@@ -1,0 +1,311 @@
+name: ${TICKET_HA_PROJECT:-ticket-ha}
+# 独立学习集群；不覆盖原ticket-platform数据卷，也不映射中间件到公网。
+services:
+  mysql1:
+    image: mysql:8.0
+    hostname: mysql1
+    networks:
+      default: {ipv4_address: 172.30.246.11}
+    restart: unless-stopped
+    environment: {MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-password, MYSQL_ROOT_HOST: "%", TZ: Asia/Shanghai}
+    secrets: [mysql-password]
+    volumes: [mysql1-data:/var/lib/mysql]
+    command:
+      - --server-id=1
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --log-bin=binlog
+      - --binlog-format=ROW
+      - --binlog-checksum=NONE
+      - --log-replica-updates=ON
+      - --plugin-load-add=group_replication.so
+      - --loose-group-replication-group-name=fe117aa1-4885-4c1c-8947-73058bab8321
+      - --loose-group-replication-local-address=mysql1:33061
+      - --loose-group-replication-group-seeds=mysql1:33061,mysql2:33061,mysql3:33061
+      - --loose-group-replication-start-on-boot=OFF
+      - --loose-group-replication-single-primary-mode=ON
+      - --loose-group-replication-exit-state-action=READ_ONLY
+      - --loose-group-replication-unreachable-majority-timeout=10
+      - --loose-group-replication-consistency=BEFORE_ON_PRIMARY_FAILOVER
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=300
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/secrets/mysql-password) mysql -uroot -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  mysql2:
+    image: mysql:8.0
+    hostname: mysql2
+    networks:
+      default: {ipv4_address: 172.30.246.12}
+    restart: unless-stopped
+    environment: {MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-password, MYSQL_ROOT_HOST: "%", TZ: Asia/Shanghai}
+    secrets: [mysql-password]
+    volumes: [mysql2-data:/var/lib/mysql]
+    command:
+      - --server-id=2
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --log-bin=binlog
+      - --binlog-format=ROW
+      - --binlog-checksum=NONE
+      - --log-replica-updates=ON
+      - --plugin-load-add=group_replication.so
+      - --loose-group-replication-group-name=fe117aa1-4885-4c1c-8947-73058bab8321
+      - --loose-group-replication-local-address=mysql2:33061
+      - --loose-group-replication-group-seeds=mysql1:33061,mysql2:33061,mysql3:33061
+      - --loose-group-replication-start-on-boot=OFF
+      - --loose-group-replication-single-primary-mode=ON
+      - --loose-group-replication-exit-state-action=READ_ONLY
+      - --loose-group-replication-unreachable-majority-timeout=10
+      - --loose-group-replication-consistency=BEFORE_ON_PRIMARY_FAILOVER
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=300
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/secrets/mysql-password) mysql -uroot -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  mysql3:
+    image: mysql:8.0
+    hostname: mysql3
+    networks:
+      default: {ipv4_address: 172.30.246.13}
+    restart: unless-stopped
+    environment: {MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-password, MYSQL_ROOT_HOST: "%", TZ: Asia/Shanghai}
+    secrets: [mysql-password]
+    volumes: [mysql3-data:/var/lib/mysql]
+    command:
+      - --server-id=3
+      - --gtid-mode=ON
+      - --enforce-gtid-consistency=ON
+      - --log-bin=binlog
+      - --binlog-format=ROW
+      - --binlog-checksum=NONE
+      - --log-replica-updates=ON
+      - --plugin-load-add=group_replication.so
+      - --loose-group-replication-group-name=fe117aa1-4885-4c1c-8947-73058bab8321
+      - --loose-group-replication-local-address=mysql3:33061
+      - --loose-group-replication-group-seeds=mysql1:33061,mysql2:33061,mysql3:33061
+      - --loose-group-replication-start-on-boot=OFF
+      - --loose-group-replication-single-primary-mode=ON
+      - --loose-group-replication-exit-state-action=READ_ONLY
+      - --loose-group-replication-unreachable-majority-timeout=10
+      - --loose-group-replication-consistency=BEFORE_ON_PRIMARY_FAILOVER
+      - --innodb-buffer-pool-size=128M
+      - --max-connections=300
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/secrets/mysql-password) mysql -uroot -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+  mysql-proxy1:
+    image: ticket-ha-mysql-proxy:local
+    build: {context: ./proxy}
+    restart: unless-stopped
+    ports: ["127.0.0.1:13316:3306"]
+    secrets: [mysql-password]
+    volumes: ["./proxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+    depends_on:
+      mysql1: {condition: service_healthy}
+      mysql2: {condition: service_healthy}
+      mysql3: {condition: service_healthy}
+  mysql-proxy2:
+    image: ticket-ha-mysql-proxy:local
+    build: {context: ./proxy}
+    restart: unless-stopped
+    ports: ["127.0.0.1:13317:3306"]
+    secrets: [mysql-password]
+    volumes: ["./proxy/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg:ro"]
+    depends_on:
+      mysql1: {condition: service_healthy}
+      mysql2: {condition: service_healthy}
+      mysql3: {condition: service_healthy}
+  redis1:
+    image: redis:7.4-alpine
+    hostname: redis1
+    environment: {REDIS_NODE_IP: 172.30.246.51}
+    networks:
+      default: {ipv4_address: 172.30.246.51}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-redis.sh"]
+    volumes: ["./redis/start-redis.sh:/scripts/start-redis.sh:ro",redis1-data:/data]
+    secrets: [redis-password]
+  sentinel1:
+    image: redis:7.4-alpine
+    hostname: sentinel1
+    environment: {SENTINEL_NODE_IP: 172.30.246.54}
+    networks:
+      default: {ipv4_address: 172.30.246.54}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-sentinel.sh"]
+    volumes: ["./redis/start-sentinel.sh:/scripts/start-sentinel.sh:ro",sentinel1-data:/data]
+    secrets: [redis-password]
+    depends_on: [redis1,redis2,redis3]
+  redis2:
+    image: redis:7.4-alpine
+    hostname: redis2
+    environment: {REDIS_NODE_IP: 172.30.246.52}
+    networks:
+      default: {ipv4_address: 172.30.246.52}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-redis.sh"]
+    volumes: ["./redis/start-redis.sh:/scripts/start-redis.sh:ro",redis2-data:/data]
+    secrets: [redis-password]
+  sentinel2:
+    image: redis:7.4-alpine
+    hostname: sentinel2
+    environment: {SENTINEL_NODE_IP: 172.30.246.55}
+    networks:
+      default: {ipv4_address: 172.30.246.55}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-sentinel.sh"]
+    volumes: ["./redis/start-sentinel.sh:/scripts/start-sentinel.sh:ro",sentinel2-data:/data]
+    secrets: [redis-password]
+    depends_on: [redis1,redis2,redis3]
+  redis3:
+    image: redis:7.4-alpine
+    hostname: redis3
+    environment: {REDIS_NODE_IP: 172.30.246.53}
+    networks:
+      default: {ipv4_address: 172.30.246.53}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-redis.sh"]
+    volumes: ["./redis/start-redis.sh:/scripts/start-redis.sh:ro",redis3-data:/data]
+    secrets: [redis-password]
+  sentinel3:
+    image: redis:7.4-alpine
+    hostname: sentinel3
+    environment: {SENTINEL_NODE_IP: 172.30.246.56}
+    networks:
+      default: {ipv4_address: 172.30.246.56}
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start-sentinel.sh"]
+    volumes: ["./redis/start-sentinel.sh:/scripts/start-sentinel.sh:ro",sentinel3-data:/data]
+    secrets: [redis-password]
+    depends_on: [redis1,redis2,redis3]
+  rabbit1:
+    image: rabbitmq:4.3.6-management
+    hostname: rabbit1
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start.sh"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ticket
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2"
+    secrets: [rabbit-password,rabbit-cookie]
+    volumes: ["./rabbitmq/start.sh:/scripts/start.sh:ro","./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro",rabbit1-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD","rabbitmq-diagnostics","-q","check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  rabbit2:
+    image: rabbitmq:4.3.6-management
+    hostname: rabbit2
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start.sh"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ticket
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2"
+    secrets: [rabbit-password,rabbit-cookie]
+    volumes: ["./rabbitmq/start.sh:/scripts/start.sh:ro","./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro",rabbit2-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD","rabbitmq-diagnostics","-q","check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  rabbit3:
+    image: rabbitmq:4.3.6-management
+    hostname: rabbit3
+    restart: unless-stopped
+    entrypoint: ["sh","/scripts/start.sh"]
+    environment:
+      RABBITMQ_DEFAULT_USER: ticket
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "+S 2:2"
+    secrets: [rabbit-password,rabbit-cookie]
+    volumes: ["./rabbitmq/start.sh:/scripts/start.sh:ro","./rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro",rabbit3-data:/var/lib/rabbitmq]
+    healthcheck:
+      test: ["CMD","rabbitmq-diagnostics","-q","check_running"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+  nacos1:
+    image: ticket-nacos:3.1.2-local
+    build:
+      context: ../../.local/docker/nacos
+      dockerfile: ../../../deploy/docker/nacos/Dockerfile
+    hostname: nacos1
+    restart: unless-stopped
+    entrypoint: ["sh","/run/ha/nacos/start.sh"]
+    environment: {NACOS_NODE_IP: 172.30.246.31}
+    volumes: ["./nacos:/run/ha/nacos:ro","./nacos/cluster.conf:/opt/nacos/conf/cluster.conf:ro",nacos1-data:/opt/nacos/data]
+    secrets: [mysql-password,nacos-identity,nacos-token-secret]
+    networks:
+      default: {ipv4_address: 172.30.246.31}
+  nacos2:
+    image: ticket-nacos:3.1.2-local
+    build:
+      context: ../../.local/docker/nacos
+      dockerfile: ../../../deploy/docker/nacos/Dockerfile
+    hostname: nacos2
+    restart: unless-stopped
+    entrypoint: ["sh","/run/ha/nacos/start.sh"]
+    environment: {NACOS_NODE_IP: 172.30.246.32}
+    volumes: ["./nacos:/run/ha/nacos:ro","./nacos/cluster.conf:/opt/nacos/conf/cluster.conf:ro",nacos2-data:/opt/nacos/data]
+    secrets: [mysql-password,nacos-identity,nacos-token-secret]
+    networks:
+      default: {ipv4_address: 172.30.246.32}
+  nacos3:
+    image: ticket-nacos:3.1.2-local
+    build:
+      context: ../../.local/docker/nacos
+      dockerfile: ../../../deploy/docker/nacos/Dockerfile
+    hostname: nacos3
+    restart: unless-stopped
+    entrypoint: ["sh","/run/ha/nacos/start.sh"]
+    environment: {NACOS_NODE_IP: 172.30.246.33}
+    volumes: ["./nacos:/run/ha/nacos:ro","./nacos/cluster.conf:/opt/nacos/conf/cluster.conf:ro",nacos3-data:/opt/nacos/data]
+    secrets: [mysql-password,nacos-identity,nacos-token-secret]
+    networks:
+      default: {ipv4_address: 172.30.246.33}
+  mysql-restore:
+    profiles: [restore]
+    image: mysql:8.0
+    environment: {MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-password}
+    secrets: [mysql-password]
+    volumes: [mysql-restore-data:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$(cat /run/secrets/mysql-password) mysql -uroot -Nse 'SELECT 1' >/dev/null 2>&1"]
+      interval: 3s
+      retries: 40
+
+secrets:
+  mysql-password: {file: ../../.local/ha/mysql-password}
+  redis-password: {file: ../../.local/ha/redis-password}
+  rabbit-password: {file: ../../.local/ha/rabbit-password}
+  rabbit-cookie: {file: ../../.local/ha/rabbit-cookie}
+  nacos-identity: {file: ../../.local/ha/nacos-identity}
+  nacos-token-secret: {file: ../../.local/ha/nacos-token-secret}
+  nacos-admin-password: {file: ../../.local/ha/nacos-admin-password}
+networks:
+  default:
+    ipam:
+      config: [{subnet: 172.30.246.0/24}]
+volumes:
+  mysql1-data:
+  mysql2-data:
+  mysql3-data:
+  redis1-data:
+  redis2-data:
+  redis3-data:
+  sentinel1-data:
+  sentinel2-data:
+  sentinel3-data:
+  rabbit1-data:
+  rabbit2-data:
+  rabbit3-data:
+  nacos1-data:
+  nacos2-data:
+  nacos3-data:
+  mysql-restore-data:

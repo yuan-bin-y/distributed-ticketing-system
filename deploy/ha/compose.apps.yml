@@ -1,0 +1,145 @@
+x-env: &ha-env
+  JAVA_TOOL_OPTIONS: "-Xms32m -Xmx256m -XX:ActiveProcessorCount=2 -Duser.home=/tmp -Duser.timezone=Asia/Shanghai"
+  MANAGEMENT_OTLP_METRICS_EXPORT_ENABLED: "false"
+  LOCAL_MYSQL_USERNAME: root
+  SPRING_DATASOURCE_HIKARI_MAXIMUM_POOL_SIZE: "20"
+  SPRING_DATA_REDIS_SENTINEL_MASTER: ticket-master
+  SPRING_DATA_REDIS_SENTINEL_NODES: sentinel1:26379,sentinel2:26379,sentinel3:26379
+  LOCAL_RABBITMQ_USERNAME: ticket
+  SPRING_RABBITMQ_ADDRESSES: rabbit1:5672,rabbit2:5672,rabbit3:5672
+  NACOS_SERVER_ADDR: nacos1:8848,nacos2:8848,nacos3:8848
+  SPRING_CLOUD_NACOS_DISCOVERY_GROUP: TICKET_HA
+  NACOS_CONFIG_GROUP: TICKET_HA
+  SPRING_PROFILES_ACTIVE: nacos
+  AUTH_JWK_SET_URI: http://auth:8065/.well-known/jwks.json
+  TICKET_MQ_ENABLED: "true"
+  TICKET_MQ_PREFIX: ticket-ha
+  TICKET_RATE_LIMIT_TRUSTED_PROXIES: 172.30.246.41/32,172.30.246.42/32
+  EVENT_DATABASE_CONCURRENCY: "8"
+  EVENT_PLANNED_INSTANCES: ${TICKET_HA_APP_REPLICAS:-2}
+  EVENT_CLUSTER_LOAD_BUDGET: "16"
+  PAYMENT_SIMULATION_ENABLED: "true"
+  TICKET_WORKFLOW_METRICS_ENABLED: "true"
+  TICKET_MANAGEMENT_PORT: "9000"
+  TICKET_MANAGEMENT_ADDRESS: 0.0.0.0
+x-app: &ha-app
+  profiles: [apps]
+  restart: unless-stopped
+  init: true
+  entrypoint: ["sh","/scripts/start-app.sh"]
+  volumes: ["./start-app.sh:/scripts/start-app.sh:ro"]
+  deploy: {replicas: "${TICKET_HA_APP_REPLICAS:-2}"}
+  secrets: [redis-password,nacos-admin-password]
+  stop_grace_period: 40s
+  healthcheck: &app-health
+    interval: 5s
+    timeout: 5s
+    retries: 60
+    start_period: 40s
+
+services:
+  auth:
+    <<: *ha-app
+    image: ticket-auth-service:ha-local
+    build: {context: ../../ticket-auth-service}
+    environment:
+      <<: *ha-env
+      AUTH_JWT_PRIVATE_KEY_PATH: /run/secrets/auth-private-key
+      AUTH_JWT_PUBLIC_KEY_PATH: /run/secrets/auth-public-key
+      AUTH_DB_URL: "jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/ticket_auth?createDatabaseIfNotExist=true&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&connectTimeout=3000&socketTimeout=30000"
+    secrets: [mysql-password,redis-password,nacos-admin-password,auth-admin-password,auth-private-key,auth-public-key]
+    healthcheck:
+      <<: *app-health
+      test: ["CMD","curl","-fsS","http://127.0.0.1:8065/api/auth/ping"]
+  inventory:
+    <<: *ha-app
+    image: ticket-inventory-service:ha-local
+    build: {context: ../../ticket-inventory-service}
+    environment:
+      <<: *ha-env
+      ORDER_INVENTORY_CREDENTIAL_PATH: /run/secrets/order-inventory-token
+      EVENT_INVENTORY_CREDENTIAL_PATH: /run/secrets/event-inventory-token
+      INVENTORY_DB_URL: "jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/ticket_inventory?createDatabaseIfNotExist=true&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&connectTimeout=3000&socketTimeout=30000"
+    secrets: [mysql-password,redis-password,nacos-admin-password,order-inventory-token,event-inventory-token]
+    healthcheck:
+      <<: *app-health
+      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' -H \"X-Order-Inventory-Credential: $$(cat /run/secrets/order-inventory-token)\" http://127.0.0.1:8063/internal/stocks/1); [ \"$$code\" = 200 ] || [ \"$$code\" = 404 ]"]
+  event:
+    <<: *ha-app
+    image: ticket-event-service:ha-local
+    build: {context: ../../ticket-event-service}
+    environment:
+      <<: *ha-env
+      ORDER_EVENT_CREDENTIAL_PATH: /run/secrets/order-event-token
+      EVENT_INVENTORY_CREDENTIAL_PATH: /run/secrets/event-inventory-token
+      EVENT_DB_URL: "jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/ticket_event?createDatabaseIfNotExist=true&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&connectTimeout=3000&socketTimeout=30000"
+    secrets: [mysql-password,redis-password,nacos-admin-password,order-event-token,event-inventory-token]
+    healthcheck:
+      <<: *app-health
+      test: ["CMD","curl","-fsS","http://127.0.0.1:8061/api/events/ping"]
+  payment:
+    <<: *ha-app
+    image: ticket-payment-service:ha-local
+    build: {context: ../../ticket-payment-service}
+    environment:
+      <<: *ha-env
+      ORDER_PAYMENT_CREDENTIAL_PATH: /run/secrets/order-payment-token
+      PAYMENT_ORDER_CREDENTIAL_PATH: /run/secrets/payment-order-token
+      PAYMENT_DB_URL: "jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/ticket_payment?createDatabaseIfNotExist=true&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&connectTimeout=3000&socketTimeout=30000"
+    secrets: [mysql-password,redis-password,rabbit-password,nacos-admin-password,order-payment-token,payment-order-token]
+    healthcheck:
+      <<: *app-health
+      test: ["CMD","curl","-fsS","http://127.0.0.1:8064/api/payments/ping"]
+  order:
+    <<: *ha-app
+    image: ticket-order-service:ha-local
+    build: {context: ../../ticket-order-service}
+    environment:
+      <<: *ha-env
+      ORDER_EVENT_CREDENTIAL_PATH: /run/secrets/order-event-token
+      ORDER_INVENTORY_CREDENTIAL_PATH: /run/secrets/order-inventory-token
+      ORDER_PAYMENT_CREDENTIAL_PATH: /run/secrets/order-payment-token
+      PAYMENT_ORDER_CREDENTIAL_PATH: /run/secrets/payment-order-token
+      ORDER_DB_URL: "jdbc:mysql://mysql-proxy1:3306,mysql-proxy2:3306/ticket_order?createDatabaseIfNotExist=true&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true&connectTimeout=3000&socketTimeout=30000"
+    secrets: [mysql-password,redis-password,rabbit-password,nacos-admin-password,order-event-token,order-inventory-token,order-payment-token,payment-order-token]
+    healthcheck:
+      <<: *app-health
+      test: ["CMD","curl","-fsS","http://127.0.0.1:8062/api/orders/ping"]
+  gateway:
+    <<: *ha-app
+    image: ticket-gateway:ha-local
+    build: {context: ../../ticket-gateway}
+    environment:
+      <<: *ha-env
+    healthcheck:
+      <<: *app-health
+      test: ["CMD","curl","-fsS","http://127.0.0.1:8060/api/auth/ping"]
+  edge1:
+    profiles: [apps]
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ["127.0.0.1:18070:8080"]
+    volumes: ["./edge.conf:/etc/nginx/nginx.conf:ro"]
+    networks:
+      default: {ipv4_address: 172.30.246.41}
+    depends_on:
+      gateway: {condition: service_healthy}
+  edge2:
+    profiles: [apps]
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports: ["127.0.0.1:18071:8080"]
+    volumes: ["./edge.conf:/etc/nginx/nginx.conf:ro"]
+    networks:
+      default: {ipv4_address: 172.30.246.42}
+    depends_on:
+      gateway: {condition: service_healthy}
+secrets:
+  auth-admin-password: {file: ../../.local/ha/auth-admin-password}
+  auth-private-key: {file: ../../.local/auth-keys/private.pem}
+  auth-public-key: {file: ../../.local/auth-keys/public.pem}
+  order-event-token: {file: ../../.local/service-credentials/order-event.token}
+  order-inventory-token: {file: ../../.local/service-credentials/order-inventory.token}
+  event-inventory-token: {file: ../../.local/service-credentials/event-inventory.token}
+  order-payment-token: {file: ../../.local/service-credentials/order-payment.token}
+  payment-order-token: {file: ../../.local/service-credentials/payment-order.token}
