@@ -74,3 +74,23 @@ docker compose -f compose.yml -f compose.proxy.yml up -d
 
 示例网段如与本机网络冲突，应同时调整 Compose 网段、代理固定地址和可信代理配置。
 多级代理需逐级规范化转发头并分别限制网络来源，禁止配置覆盖全部地址的可信范围。
+
+## 数据库容量计划
+
+Event 启动时检查 `planned-instances × database-concurrency ≤ cluster-load-budget`，以及
+`database-concurrency + reserved-connections ≤ Hikari maximum-pool-size`。默认单实例16个回源、
+连接池20、预留4；两个实例保持原总预算时，各自改为8并声明实例数2。
+参数通过 `EVENT_DATABASE_CONCURRENCY`、`EVENT_PLANNED_INSTANCES`、`EVENT_CLUSTER_LOAD_BUDGET`、
+`EVENT_DB_POOL_SIZE`、`EVENT_RESERVED_DB_CONNECTIONS` 设置，容量参数调整后重新部署。
+
+```powershell
+./deploy/capacity/check-capacity.ps1
+./deploy/capacity/check-capacity.ps1 -EventInstances 2 -EventConcurrency 8 -MySqlMaxConnections 180
+```
+
+部署前把所有访问同一MySQL主节点的服务副本、连接池、Nacos外部数据源及运维连接一起计算。
+第二个示例要求MySQL实际配置至少180个连接；也可通过降低每实例连接池上限维持原总连接预算。
+该工具在超额时返回非零；它与启动检查验证的是声明的容量计划，不能发现未登记的额外实例，
+也不构成分布式并发锁。扩容工具必须同步更新计划，不能只增加副本。
+监控 `ticket_event_database_planned_loads`、`ticket_event_database_planned_connections` 和 Hikari
+活跃/等待连接，结合 SQL 延迟与数据库 CPU/IO 压测调整预算；示例数值不是生产吞吐承诺。
