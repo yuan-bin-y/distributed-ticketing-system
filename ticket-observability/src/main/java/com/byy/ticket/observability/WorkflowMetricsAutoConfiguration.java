@@ -34,7 +34,8 @@ public class WorkflowMetricsAutoConfiguration {
                     new Sample("order_recovery","t_order","next_attempt_at", "status IN ('STOCK_PENDING','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING','PAID') AND next_attempt_at<=CURRENT_TIMESTAMP(3)"),
                     new Sample("order_review","t_order","updated_at","status='REVIEW_REQUIRED'"));
                 case "ticket-payment-service" -> List.of(
-                    new Sample("payment_outbox","t_outbox_event","created_at","status IN ('PENDING','SENDING','REVIEW_REQUIRED')"));
+                    new Sample("payment_outbox","t_outbox_event","created_at","status IN ('PENDING','SENDING')"),
+                    new Sample("payment_outbox_review","t_outbox_event","created_at","status='REVIEW_REQUIRED'"));
                 case "ticket-event-service" -> List.of(
                     new Sample("event_preparation","t_ticket_tier","preparation_next_at","preparation_status='PENDING' AND preparation_next_at<=CURRENT_TIMESTAMP(3)"),
                     new Sample("event_review","t_ticket_tier","preparation_next_at","preparation_status='REVIEW_REQUIRED'"));

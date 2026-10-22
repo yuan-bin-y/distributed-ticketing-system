@@ -23,7 +23,7 @@ spring:
         observation-enabled: false
         auto-startup: true
         acknowledge-mode: manual
-        prefetch: 10
+        prefetch: 1
         default-requeue-rejected: true
   application:
     name: ticket-order-service
@@ -68,6 +68,8 @@ ticket:
     enabled: ${TICKET_MQ_ENABLED:false}
     prefix: ${TICKET_MQ_PREFIX:ticket}
     retry-delays-ms: ${TICKET_MQ_RETRY_DELAYS_MS:10000,30000,120000}
+    forwarding-backoff-base: ${TICKET_MQ_FORWARDING_BACKOFF_BASE:1s}
+    forwarding-backoff-max: ${TICKET_MQ_FORWARDING_BACKOFF_MAX:30s}
   event-service-auth:
     order-event-token: ${ORDER_EVENT_SERVICE_TOKEN:}
     credential-path: ${ORDER_EVENT_CREDENTIAL_PATH:.local/service-credentials/order-event.token}

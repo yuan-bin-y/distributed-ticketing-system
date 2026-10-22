@@ -10,6 +10,7 @@ param(
 . (Join-Path $PSScriptRoot 'common.ps1')
 $script:TicketDocker=Get-TicketDocker
 Initialize-TicketDockerEnvironment $ProjectName
+& (Join-Path $PSScriptRoot '../capacity/check-capacity.ps1') -OrderInstances $OrderReplicas -ServicePool 10 -MySqlMaxConnections 151
 Push-Location $script:TicketProjectRoot
 try {
     & $script:TicketDocker info --format '{{.OSType}}' | Out-Null

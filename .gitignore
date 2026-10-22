@@ -77,3 +77,4 @@ replay_pid*
 /docs/*
 !/docs/apifox/
 !/docs/docker-deployment.md
+!/docs/operations.md

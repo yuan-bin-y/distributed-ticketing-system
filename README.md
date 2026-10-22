@@ -89,14 +89,15 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | 服务发现与配置管理 | Nacos 注册发现、公共与服务配置；日志级别和 Event 缓存 TTL 动态刷新 |
 | 跨服务身份验证 | Auth 签发 RS256 JWT，网关和业务服务独立校验签名与 Redis 会话；内部接口使用分方向凭证 |
 | 跨库交易与网络结果不确定 | 本地事务、持久化状态、唯一键、原参数幂等、事实核对、租约领取、退避重试和补偿 |
-| 付款事件可靠传递 | RabbitMQ + Outbox，发布 Confirm / Return 检查，消费事务提交后 ACK，消费幂等、三档延迟重试和死信重投 |
+| 付款事件可靠传递 | RabbitMQ + Outbox，Confirm / Return 检查、消费幂等、延迟重试及死信；发布失败预算、人工核对与审计重放，转发失败共享退避 |
 | 热点查询与缓存重建竞争 | 展示缓存、空结果短缓存、TTL 抖动、Redis 重建锁、随机令牌校验、提交后版本失效及受控回源 |
-| 入口突发请求 | WebFlux 响应式 Redis Lua 令牌桶，活动查询与订单请求按全局及用户 / IP 限流 |
+| 入口突发请求 | WebFlux 响应式 Redis Lua 令牌桶，按全局及用户 / IP 限流；仅接受可信代理规范化的客户端地址 |
 | 热点库存行竞争 | 事务前申请 Redis 按票档共享的并发额度，满额返回 `STOCK_BUSY`；MySQL 条件更新及事务保证库存正确 |
 | 下游故障扩散 | Resilience4j 熔断、并发隔离、HTTP 超时及故障分类；写请求由业务流程核对和重试 |
 | 请求和后台任务难以排查 | Micrometer Tracing + OpenTelemetry + Tempo，持久化并恢复异步追踪上下文，关联 HTTP、MQ 和恢复任务 |
-| 服务故障和业务积压不可见 | Prometheus 指标、Grafana 11 个面板和 10 条告警规则，覆盖服务健康、延迟、恢复积压、死信和采样异常 |
-| 多实例接管与部署复现 | Docker Compose、健康检查、独立数据卷、只读凭证挂载；订单双实例、优雅停止、有界读取故障切换 |
+| 服务故障和业务积压不可见 | Prometheus 指标、Grafana 11 个面板和 12 条告警规则，覆盖服务健康、恢复积压、人工核对、消息重投和采样异常 |
+| 扩容后数据库总压力增长 | Event 启动检查实例数、回源额度与连接池；部署前计算全部服务和 Nacos 的总连接预算 |
+| 多实例接管与部署复现 | 日常 Compose 与独立 HA 演练拓扑；MySQL Group Replication、Redis Sentinel、RabbitMQ quorum、Nacos 三节点，切换及备份恢复工具 |
 
 一致性采用可恢复的最终一致性。消息发布确认和消费 ACK 分别对应投递与接收阶段，完整出票以订单达到 `COMPLETED` 为准。
 
@@ -133,7 +134,7 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | `ticket-resilience` | 不独立启动 | HTTP 熔断与并发隔离组件 |
 | `ticket-observability` | 不独立启动 | 追踪上下文、异步 Span 和工作流指标 |
 
-五个独立业务库共 **14 张业务表**，另有各库的 Flyway 迁移历史表：
+五个独立业务库共 **15 张业务表**，另有各库的 Flyway 迁移历史表：
 
 | 数据库 | 业务表数量 | 数据所有权 |
 | --- | --- | --- |
@@ -141,7 +142,7 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | `ticket_event` | 3 | 活动、场次、票档及准备进度 |
 | `ticket_order` | 5 | 订单、订单项、电子票、累计限购及消费记录 |
 | `ticket_inventory` | 2 | 库存及预留记录 |
-| `ticket_payment` | 3 | 支付、模拟冲正及 Outbox 事件 |
+| `ticket_payment` | 4 | 支付、模拟冲正、Outbox 事件及人工重放审计 |
 
 数据库结构由各业务服务 `src/main/resources/db/migration/` 下的 Flyway SQL 管理。
 
@@ -184,6 +185,18 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 
 管理员账号为 `docker_admin`，生成的密码位于 `.local/docker/admin.password`。密码、私钥、内部服务凭证和运行输出均保存在 Git 忽略目录 `.local/`，无需写入源码。
 
+### 可靠性运维与 HA 演练
+
+[交易可靠性与部署运维](docs/operations.md) 包含 Outbox 人工核对与审计重放、消息转发故障治理、可信代理配置、数据库容量计划和自动化回归命令。
+
+独立的 [HA 部署配置](deploy/ha/compose.yml) 使用 `ticket-ha` 项目和独立数据卷，不替换上述日常启动方式。可先启动三节点基础设施，再按资源情况启用业务副本；操作步骤、故障演练、备份恢复及跨主机部署条件见运维文档。三节点同机演练用于验证容器节点故障，不能抵御宿主机故障。
+
+```powershell
+# 单元回归；-Integration 开启独立随机MySQL测试库中的事务、并发与故障窗口检查
+./deploy/tests/run-regression.ps1 -JdkHome '你的JDK17目录'
+./deploy/tests/run-regression.ps1 -Integration -JdkHome '你的JDK17目录'
+```
+
 ## API 与演示
 
 [Apifox 使用指南](docs/apifox/README.md) 提供 **22 个公开接口、13 个内部接口**的 OpenAPI 契约，以及登录凭证、活动、订单和支付编号的变量提取脚本。日常交易调试导入公开接口，并将网关环境地址设置为 `http://localhost:18060`。
@@ -194,4 +207,4 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 
 当前功能通过 API 演示，支付与冲正为模拟实现；尚无业务前端和入场核验。活动管理支持创建、准备和发布，未提供已发布活动编辑、下架或库存调整。
 
-库存数量由 MySQL 维护，Redis 用于缓存、会话、限流及票档并发准入。监控告警可在本地页面查看；Redis 库存预扣账本、库存分段和外部告警通知渠道未实现。容器配置面向本地学习，远程部署需另行配置访问控制。
+库存数量由 MySQL 维护，Redis 用于缓存、会话、限流及票档并发准入。监控告警可在本地页面查看；Redis 库存预扣账本、库存分段和外部告警通知渠道未实现。默认部署仍是单实例基础设施；可选 HA 拓扑提供多节点切换演练，生产部署还需跨主机故障域、TLS、最小权限账号、外部负载均衡及异地备份。

@@ -12,6 +12,8 @@ spring:
   application:
     name: ticket-event-service
   datasource:
+    hikari:
+      maximum-pool-size: ${EVENT_DB_POOL_SIZE:20}
     url: "${EVENT_DB_URL:jdbc:mysql://127.0.0.1:3306/ticket_event?createDatabaseIfNotExist=true&characterEncoding=UTF-8&connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true}"
     username: ${LOCAL_MYSQL_USERNAME}
     password: ${LOCAL_MYSQL_PASSWORD}
@@ -41,7 +43,10 @@ ticket:
     ttl-ms: 60000
     wait-ms: 1500
     lease-ms: 8000
-    database-concurrency: 16
+    database-concurrency: ${EVENT_DATABASE_CONCURRENCY:16}
+    planned-instances: ${EVENT_PLANNED_INSTANCES:1}
+    cluster-load-budget: ${EVENT_CLUSTER_LOAD_BUDGET:16}
+    reserved-connections: ${EVENT_RESERVED_DB_CONNECTIONS:4}
   event-service-auth:
     order-event-token: ${ORDER_EVENT_SERVICE_TOKEN:}
     credential-path: ${ORDER_EVENT_CREDENTIAL_PATH:.local/service-credentials/order-event.token}
