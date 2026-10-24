@@ -80,7 +80,7 @@ public class EventDatabaseQueries {
         requirePublishedEvent(eventId);
         List<EventSession> sessions = sessionMapper.selectList(Wrappers.<EventSession>lambdaQuery()
                 .eq(EventSession::getEventId, eventId).eq(EventSession::getStatus, PUBLISHED)
-                .orderByAsc(EventSession::getStartTime).orderByAsc(EventSession::getId));
+                .orderByAsc(EventSession::getStartTime).orderByAsc(EventSession::getId).last("LIMIT 100"));
         if (sessions.isEmpty()) {
             return List.of();
         }
