@@ -45,8 +45,8 @@ public class OrderSecurityConfig {
     public SecurityFilterChain userSecurity(HttpSecurity http,JwtDecoder accessTokenDecoder,ObjectMapper json,OrderWorkflowProperties properties)throws Exception{
         common(http,json);
         if(properties.devIdentityEnabled())http.addFilterBefore(new DevUserAuthenticationFilter(),BearerTokenAuthenticationFilter.class);
-        return http.authorizeHttpRequests(auth->auth.requestMatchers(HttpMethod.GET,"/api/orders/ping").permitAll().anyRequest().authenticated())
-                .oauth2ResourceServer(oauth->oauth.jwt(jwt->jwt.decoder(accessTokenDecoder))
+        return http.authorizeHttpRequests(auth->auth.requestMatchers(HttpMethod.GET,"/api/orders/ping").permitAll().requestMatchers("/api/orders/admin/**").hasRole("ADMIN").anyRequest().authenticated())
+                .oauth2ResourceServer(oauth->oauth.jwt(jwt->jwt.decoder(accessTokenDecoder).jwtAuthenticationConverter(com.byy.ticket.security.jwt.UserRoleAuthorities.converter()))
                         .authenticationEntryPoint((request,response,exception)->write(response,json,401,"UNAUTHORIZED","请登录或更新登录凭证")))
                 .build();
     }

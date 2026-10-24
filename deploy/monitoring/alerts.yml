@@ -17,12 +17,12 @@ groups:
         labels: {severity: warning}
         annotations: {summary: "服务5xx比例超过5%：{{ $labels.application }}"}
       - alert: TicketRecoveryStalled
-        expr: ticket_workflow_oldest_seconds{workflow=~"order_recovery|payment_outbox|event_preparation"} > 60
+        expr: ticket_workflow_oldest_seconds{workflow=~"order_recovery|payment_outbox|event_preparation|purchase_acceptance|purchase_outbox"} > 60
         for: 30s
         labels: {severity: warning}
         annotations: {summary: "工作流积压超过60秒：{{ $labels.workflow }}"}
       - alert: TicketManualReviewRequired
-        expr: ticket_workflow_pending{workflow=~"order_review|event_review|payment_outbox_review"} > 0
+        expr: ticket_workflow_pending{workflow=~"order_review|event_review|payment_outbox_review|purchase_outbox_review"} > 0
         for: 10s
         labels: {severity: warning}
         annotations: {summary: "存在需要人工核对的业务记录：{{ $labels.workflow }}"}

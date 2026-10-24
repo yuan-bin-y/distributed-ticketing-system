@@ -28,6 +28,8 @@ public class OrderTransactionService {
     private com.byy.ticket.order.mapper.EventPurchaseQuotaMapper eventQuotas;
     @org.springframework.beans.factory.annotation.Autowired
     private com.byy.ticket.order.rules.PurchaseRuleEngine rules;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.order.mapper.PurchaseRequestGateMapper requestGate;
 
     /** 注入属于订单库的订单、快照和购买额度Mapper。 */
     public OrderTransactionService(OrderMapper orders, OrderItemMapper items, PurchaseQuotaMapper quotas, TraceSupport traces) {
@@ -52,6 +54,12 @@ public class OrderTransactionService {
     }
     private TicketOrder save(String orderNo,Long userId,OrderCreateDTO request,TicketPurchaseRuleResponse rule,
                             BigDecimal amount,LocalDateTime now,LocalDateTime expiresAt){
+        requestGate.lock(userId,request.idempotencyKey());
+        var existing=orders.selectByRequest(userId,request.idempotencyKey());
+        if(existing!=null){var item=items.selectByOrderId(existing.getId());
+            if(item==null||!request.ticketTierId().equals(item.getTicketTierId())||!request.quantity().equals(item.getQuantity()))throw new OrderConflictException("同一幂等键的购买参数不一致");
+            return existing;
+        }
         eventQuotas.ensure(userId,rule.eventId());
         int occupiedSessions=eventQuotas.lock(userId,rule.eventId());
         eventQuotas.ensureSession(userId,rule.eventId(),rule.sessionId());

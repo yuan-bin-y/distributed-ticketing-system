@@ -32,7 +32,10 @@ public class WorkflowMetricsAutoConfiguration {
             samples=switch(service) {
                 case "ticket-order-service" -> List.of(
                     new Sample("order_recovery","t_order","next_attempt_at", "status IN ('STOCK_PENDING','CLOSING','PAYMENT_CONFIRMING','REVERSAL_PENDING','PAID') AND next_attempt_at<=CURRENT_TIMESTAMP(3)"),
-                    new Sample("order_review","t_order","updated_at","status='REVIEW_REQUIRED'"));
+                    new Sample("order_review","t_order","updated_at","status='REVIEW_REQUIRED'"),
+                    new Sample("purchase_acceptance","t_purchase_acceptance","accepted_at","status IN ('ACCEPTED','CANCELLING')"),
+                    new Sample("purchase_outbox","t_order_outbox","created_at","status IN ('PENDING','PUBLISHING')"),
+                    new Sample("purchase_outbox_review","t_order_outbox","created_at","status='REVIEW_REQUIRED'"));
                 case "ticket-payment-service" -> List.of(
                     new Sample("payment_outbox","t_outbox_event","created_at","status IN ('PENDING','SENDING')"),
                     new Sample("payment_outbox_review","t_outbox_event","created_at","status='REVIEW_REQUIRED'"));
