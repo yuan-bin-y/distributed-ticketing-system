@@ -1,3 +1,5 @@
+ticket.stock-admission.enabled: ${TICKET_STOCK_ADMISSION_ENABLED:false}
+
 server:
   port: ${INVENTORY_PORT:8063}
 

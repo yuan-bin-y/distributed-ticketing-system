@@ -58,7 +58,7 @@ public class InitializationSecurityConfig {
         return http.securityMatcher("/internal/**")
                 .addFilterBefore(new ServiceCredentialFilter(OrderInventoryCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
-                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-admissions","/internal/stock-admissions/cancel","/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
                         .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stock-reservations/{reservationId}","/internal/stocks/{ticketTierId}").hasRole("ORDER_SERVICE")
                         .anyRequest().denyAll())
                 .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))

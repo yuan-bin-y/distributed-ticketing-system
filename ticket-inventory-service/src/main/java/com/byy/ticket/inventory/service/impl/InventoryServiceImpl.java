@@ -33,6 +33,8 @@ public class InventoryServiceImpl implements InventoryService {
     private final Clock clock;
     private final HotStockGate hotStockGate;
     private final TransactionTemplate reservationTransaction;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.byy.ticket.inventory.admission.StockAdmissionService admissions;
 
     /**
      * 注入库存 Mapper、预留 Mapper 和时钟，所有写入都落在库存服务自己的数据库。
@@ -64,6 +66,8 @@ public class InventoryServiceImpl implements InventoryService {
 
     /** 仅在TransactionTemplate事务中执行；保持原预留幂等、条件扣减及两表原子提交。 */
     private StockReservationVO reserveInTransaction(ReserveStockDTO request) {
+        // 所有库存写入先锁票档，再锁预留/准入记录，避免与账本重建形成反向锁顺序。
+        stockMapper.selectForUpdate(request.ticketTierId());
         StockReservation candidate = new StockReservation();
         candidate.setReservationId(UUID.randomUUID().toString().replace("-", ""));
         candidate.setOrderId(request.orderId());
@@ -89,6 +93,7 @@ public class InventoryServiceImpl implements InventoryService {
         if (!request.expiresAt().isAfter(LocalDateTime.now(clock))) {
             throw new IllegalArgumentException("首次预留的到期时间必须晚于当前时间");
         }
+        if(admissions!=null)admissions.applyWithinTransaction(request);
         if (PerformanceSpan.measure("sql.stock.update",()->stockMapper.reserve(request.ticketTierId(), request.sessionId(), request.quantity())) != 1) {
             TicketStock stock = stockMapper.selectForUpdate(request.ticketTierId());
             if (stock == null) {
@@ -126,6 +131,8 @@ public class InventoryServiceImpl implements InventoryService {
      */
     private StockReservationVO transition(String reservationId, ReservationStatus target) {
         validateReservationId(reservationId);
+        StockReservation snapshot=reservationMapper.selectById(reservationId);
+        if(snapshot!=null)stockMapper.selectForUpdate(snapshot.getTicketTierId());
         StockReservation reservation = reservationMapper.selectForUpdate(reservationId);
         if (reservation == null) {
             throw new ResourceNotFoundException("库存预留记录不存在");
@@ -147,6 +154,7 @@ public class InventoryServiceImpl implements InventoryService {
             throw new IllegalStateException("预留记录与库存数量不一致");
         }
         reservation.setStatus(target.name());
+        if(admissions!=null&&target==ReservationStatus.RELEASED)admissions.releasedWithinTransaction(reservation.getOrderId(),reservation.getTicketTierId());
         return toVO(reservation);
     }
 
