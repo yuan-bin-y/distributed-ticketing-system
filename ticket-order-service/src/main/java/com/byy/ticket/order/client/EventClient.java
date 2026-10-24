@@ -99,7 +99,9 @@ public class EventClient {
                 && rule.price() != null && rule.price().signum() > 0
                 && rule.saleStartTime() != null && rule.saleEndTime() != null
                 && rule.saleEndTime().isAfter(rule.saleStartTime())
-                && rule.purchaseLimit() != null && rule.purchaseLimit() > 0;
+                && rule.purchaseLimit() != null && rule.purchaseLimit() > 0
+                && rule.ruleVersion()!=null && rule.ruleVersion()>=0
+                && rule.maxSessions()!=null && rule.maxSessions()>0 && rule.maxPerOrder()!=null && rule.maxPerOrder()>0;
     }
 
     /**

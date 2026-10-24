@@ -39,6 +39,7 @@ class OrderTransactionIntegrationTest {
     @Configuration @EnableTransactionManagement @MapperScan("com.byy.ticket.order.mapper")
     @Import({OrderTransactionService.class,OrderPaymentReceiptTransaction.class,PaymentMessageTransaction.class})
     static class Config {
+        @Bean com.byy.ticket.order.rules.PurchaseRuleEngine rules(){return new com.byy.ticket.order.rules.PurchaseRuleEngine();}
         @Bean DataSource dataSource(){return db.dataSource;}
         @Bean SqlSessionFactory sqlSessionFactory() throws Exception{return db.factory();}
         @Bean PlatformTransactionManager transactions(){return new DataSourceTransactionManager(db.dataSource);}
@@ -136,5 +137,35 @@ class OrderTransactionIntegrationTest {
             assertEquals("PAYMENT_CONFIRMING",mapper.selectById(order.getId()).getStatus());
             assertEquals(0,mapper.finish(order.getId(),"closing","CLOSING","CLOSED",null,order.getExpiresAt(),null));
         }finally{pool.shutdownNow();}
+    }
+    TicketOrder limited(long user,long session,int quantity,String key,int maxSessions){
+        var now=LocalDateTime.now(ZoneOffset.ofHours(8)).truncatedTo(ChronoUnit.MILLIS);
+        var rule=new TicketPurchaseRuleResponse(900L,session,session,"quota",BigDecimal.ONE,now.minusHours(1),now.plusHours(1),5,2L,maxSessions,3);
+        return context.getBean(OrderTransactionService.class).create(user,new OrderCreateDTO(session,quantity,key),rule,BigDecimal.valueOf(quantity),now,now.plusMinutes(10));
+    }
+    @Test void sameSessionOrdersShareOneSlotAndLastReleaseRestoresSlot(){
+        var first=limited(901,901,1,"a",1);var second=limited(901,901,1,"b",1);
+        assertThrows(RuntimeException.class,()->limited(901,902,1,"c",1));
+        var mapper=context.getBean(OrderMapper.class);var tx=context.getBean(OrderTransactionService.class);
+        assertEquals(1,mapper.claim(first.getId(),"quota1",10000000));assertEquals(1,tx.finishAndReleaseQuota(first.getId(),"quota1","STOCK_PENDING",com.byy.ticket.order.model.OrderStatus.CREATE_FAILED,null,first.getExpiresAt(),"test"));
+        assertThrows(RuntimeException.class,()->limited(901,902,1,"d",1));
+        assertEquals(1,mapper.claim(second.getId(),"quota2",10000000));assertEquals(1,tx.finishAndReleaseQuota(second.getId(),"quota2","STOCK_PENDING",com.byy.ticket.order.model.OrderStatus.CREATE_FAILED,null,second.getExpiresAt(),"test"));
+        assertEquals(0,tx.finishAndReleaseQuota(second.getId(),"quota2","STOCK_PENDING",com.byy.ticket.order.model.OrderStatus.CREATE_FAILED,null,second.getExpiresAt(),"test"));
+        assertNotNull(limited(901,902,1,"e",1));
+    }
+    @Test void twoConcurrentSessionsCannotBothTakeLastUserSlot()throws Exception{
+        var pool=java.util.concurrent.Executors.newFixedThreadPool(2);var start=new java.util.concurrent.CountDownLatch(1);
+        try{
+            var a=pool.submit(()->{start.await();try{limited(903,903,1,"race_a",1);return true;}catch(com.byy.ticket.order.exception.OrderConflictException rejected){return false;}});
+            var b=pool.submit(()->{start.await();try{limited(903,904,1,"race_b",1);return true;}catch(com.byy.ticket.order.exception.OrderConflictException rejected){return false;}});
+            start.countDown();assertNotEquals(a.get(15,java.util.concurrent.TimeUnit.SECONDS),b.get(15,java.util.concurrent.TimeUnit.SECONDS));
+            assertEquals(1,sql.queryForObject("SELECT occupied_sessions FROM t_user_event_quota WHERE user_id=903 AND event_id=900",Integer.class));
+        }finally{pool.shutdownNow();}
+    }
+    @Test void policySnapshotRemainsImmutableAndPerOrderLimitRollsBack(){
+        var order=limited(905,905,2,"snapshot",2);
+        assertEquals(2L,sql.queryForObject("SELECT rule_version FROM t_order_item WHERE order_id=?",Long.class,order.getId()));
+        assertThrows(RuntimeException.class,()->limited(905,906,4,"too_many",2));
+        assertEquals(1,sql.queryForObject("SELECT occupied_sessions FROM t_user_event_quota WHERE user_id=905 AND event_id=900",Integer.class));
     }
 }

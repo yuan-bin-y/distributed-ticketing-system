@@ -23,6 +23,7 @@ public record TicketPurchaseRuleVO(
         BigDecimal price,
         LocalDateTime saleStartTime,
         LocalDateTime saleEndTime,
-        Integer purchaseLimit
+        Integer purchaseLimit,
+        Long ruleVersion,Integer maxSessions,Integer maxPerOrder
 ) {
 }

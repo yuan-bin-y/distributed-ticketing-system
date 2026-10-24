@@ -38,6 +38,7 @@
         <spring-cloud-alibaba.version>2025.1.0.0</spring-cloud-alibaba.version>
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <resilience4j.version>2.4.0</resilience4j.version>
+        <drools.version>10.1.0</drools.version>
     </properties>
 
     <!-- 导入版本清单；子模块仍须在自己的 dependencies 中引入所需组件。 -->

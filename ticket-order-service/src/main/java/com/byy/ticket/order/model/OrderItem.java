@@ -30,4 +30,9 @@ public class OrderItem {
     private Integer quantity;
     /** 单价乘数量。 */
     private BigDecimal subtotalAmount;
+    /** 下单时的不可变规则快照，规则发布或回滚不会改写历史订单。 */
+    private Long ruleVersion;
+    private Integer purchaseLimit;
+    private Integer maxSessions;
+    private Integer maxPerOrder;
 }

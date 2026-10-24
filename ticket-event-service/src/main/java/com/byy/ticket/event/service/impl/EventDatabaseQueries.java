@@ -34,6 +34,8 @@ public class EventDatabaseQueries {
     private final EventMapper eventMapper;
     private final EventSessionMapper sessionMapper;
     private final TicketTierMapper tierMapper;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.event.policy.PurchasePolicyMapper policies;
 
     /**
      * 注入活动、场次、票档 Mapper；所有查询都使用活动服务自己的数据库。
@@ -121,9 +123,11 @@ public class EventDatabaseQueries {
         Event event = requirePublishedEvent(session.getEventId());
 
         // 4. 返回规则，开售时间和购买数量由后续订单服务校验。
+        var policy=policies.active(event.getId());
         return new TicketPurchaseRuleVO(
                 event.getId(), session.getId(), tier.getId(), tier.getName(), tier.getPrice(),
-                session.getSaleStartTime(), session.getSaleEndTime(), session.getPurchaseLimit()
+                session.getSaleStartTime(), session.getSaleEndTime(), session.getPurchaseLimit(),
+                policy==null?0L:policy.version(),policy==null?Integer.MAX_VALUE:policy.maxSessions(),policy==null?Integer.MAX_VALUE:policy.maxPerOrder()
         );
     }
 

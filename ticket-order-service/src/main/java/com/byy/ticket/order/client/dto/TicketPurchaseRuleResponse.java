@@ -19,6 +19,10 @@ import java.time.LocalDateTime;
 public record TicketPurchaseRuleResponse(
         Long eventId, Long sessionId, Long ticketTierId, String ticketTierName,
         BigDecimal price, LocalDateTime saleStartTime, LocalDateTime saleEndTime,
-        Integer purchaseLimit
+        Integer purchaseLimit,Long ruleVersion,Integer maxSessions,Integer maxPerOrder
 ) {
+    /** 兼容原接口契约与旧测试；新服务返回显式版本和额度。 */
+    public TicketPurchaseRuleResponse(Long eventId,Long sessionId,Long ticketTierId,String name,BigDecimal price,LocalDateTime start,LocalDateTime end,Integer limit){
+        this(eventId,sessionId,ticketTierId,name,price,start,end,limit,0L,Integer.MAX_VALUE,Integer.MAX_VALUE);
+    }
 }

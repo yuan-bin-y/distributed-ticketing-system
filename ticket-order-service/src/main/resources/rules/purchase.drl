@@ -1,0 +1,19 @@
+package rules;
+import com.byy.ticket.order.rules.PurchaseFacts;
+global java.util.List errors;
+
+rule "开售时间" salience 100
+when PurchaseFacts(saleOpen == false)
+then errors.add("当前不在开售时间内"); end
+
+rule "每单数量" salience 90
+when PurchaseFacts($q: quantity, maxPerOrder < $q)
+then errors.add("本次数量超过每单上限"); end
+
+rule "单场累计限购" salience 80
+when PurchaseFacts($q: quantity, $used: occupiedTickets, purchaseLimit < (long)$q + $used)
+then errors.add("该场次累计购买数量超过限购"); end
+
+rule "活动最多购买场次" salience 70
+when PurchaseFacts(currentSessionOccupied == false, $used: occupiedSessions, maxSessions <= $used)
+then errors.add("该活动累计购买场次数超过限购"); end

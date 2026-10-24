@@ -31,6 +31,7 @@ class PreholdOrderTest {
         service=new OrderServiceImpl(events,mock(InventoryClient.class),Clock.fixed(now.toInstant(ZoneOffset.ofHours(8)),ZoneOffset.ofHours(8)),orders,items,transactions,workflow,
                 new OrderWorkflowProperties(false,null,true,null,null,null,null),mock(PaymentClient.class));
         ReflectionTestUtils.setField(service,"admissions",admissions);
+        ReflectionTestUtils.setField(service,"rules",mock(com.byy.ticket.order.rules.PurchaseRuleEngine.class));
         when(admissions.enabled()).thenReturn(true);
         when(events.getPurchaseRule(3L)).thenReturn(new TicketPurchaseRuleResponse(1L,2L,3L,"test",new BigDecimal("199.00"),now.minusHours(1),now.plusHours(1),2));
         when(admissions.hold(any())).thenReturn(new StockAdmissionClient.Admission(PurchaseRequestId.of(7,"same_request"),3L,2L,2,now.plusMinutes(10),"HELD"));

@@ -5,6 +5,8 @@ import org.apache.ibatis.annotations.*;
 /** Order自己的累计额度：一个用户在同场次的不同票档共用一条记录。 */
 @Mapper
 public interface PurchaseQuotaMapper {
+    @Select("SELECT occupied_quantity FROM t_user_session_quota WHERE user_id=#{userId} AND session_id=#{sessionId} FOR UPDATE")
+    long occupied(@Param("userId") long userId,@Param("sessionId") long sessionId);
     /** 首次购买初始化；重复请求保留原数量，唯一键协调并发初始化。 */
     @Insert("""
             INSERT INTO t_user_session_quota(user_id,session_id,occupied_quantity)

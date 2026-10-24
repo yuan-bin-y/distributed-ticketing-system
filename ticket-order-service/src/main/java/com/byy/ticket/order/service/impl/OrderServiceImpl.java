@@ -49,6 +49,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderWorkflowProperties properties;
     @org.springframework.beans.factory.annotation.Autowired
     private com.byy.ticket.order.client.StockAdmissionClient admissions;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.order.rules.PurchaseRuleEngine rules;
 
     /**
      * 注入远程 Client、本服务的订单 Mapper、短事务与恢复组件；不访问其他服务的数据库。
@@ -83,10 +85,7 @@ public class OrderServiceImpl implements OrderService {
         if (existing != null) { return repeat(existing, request); }
         var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
-        if (now.isBefore(rule.saleStartTime()) || !now.isBefore(rule.saleEndTime())) {
-            throw new IllegalArgumentException("当前不在开售时间内");
-        }
-        if (request.quantity() > rule.purchaseLimit()) { throw new IllegalArgumentException("本次数量超过限购"); }
+        rules.checkRequest(request.quantity(),rule,now);
         if (rule.price().scale() > 2 || rule.price().compareTo(new BigDecimal("9999999999.99")) > 0
                 || rule.ticketTierName().length() > 128) {
             throw new EventServiceCallException(
@@ -222,16 +221,7 @@ public class OrderServiceImpl implements OrderService {
         }
         var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock);
-        // 开售时间包含起点，停售时间不包含终点：[saleStartTime, saleEndTime)。
-        if (now.isBefore(rule.saleStartTime())) {
-            throw new IllegalArgumentException("尚未开售");
-        }
-        if (!now.isBefore(rule.saleEndTime())) {
-            throw new IllegalArgumentException("已停止售票");
-        }
-        if (request.quantity() > rule.purchaseLimit()) {
-            throw new IllegalArgumentException("本次购买数量超过场次限购数量");
-        }
+        rules.checkRequest(request.quantity(),rule,now);
         BigDecimal totalAmount = rule.price().multiply(BigDecimal.valueOf(request.quantity()));
         return new OrderPreviewVO(rule.eventId(), rule.sessionId(), rule.ticketTierId(), rule.ticketTierName(),
                 rule.price(), request.quantity(), totalAmount);
