@@ -1,0 +1,50 @@
+package com.byy.ticket.order.client;
+
+import com.byy.ticket.common.result.Result;
+import com.byy.ticket.order.client.dto.StockReservationRequest;
+import com.byy.ticket.order.client.exception.InventoryServiceCallException;
+import com.byy.ticket.order.client.exception.InventoryServiceCallException.Reason;
+import com.byy.ticket.order.config.InventoryClientProperties;
+import com.byy.ticket.security.service.OrderInventoryCredential;
+import java.time.LocalDateTime;
+import org.springframework.beans.factory.annotation.*;
+import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.*;
+
+/** 下单前的库存准入调用。超时保留未知结果，相同请求编号用于核对，不能直接归还数量。 */
+@Component
+public class StockAdmissionClient {
+    public record Admission(String orderNo,Long ticketTierId,Long sessionId,Integer quantity,LocalDateTime expiresAt,String status){}
+    private static final ParameterizedTypeReference<Result<Admission>> TYPE=new ParameterizedTypeReference<>(){};
+    private final RestClient client;
+    private final boolean enabled;
+    public StockAdmissionClient(@Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,InventoryClientProperties properties,
+            OrderInventoryCredential credential,@Value("${ticket.stock-admission.enabled:false}") boolean enabled){
+        client=builder.clone().baseUrl("http://"+properties.serviceId()).defaultHeader(OrderInventoryCredential.HEADER,credential.value()).build();this.enabled=enabled;
+    }
+    public boolean enabled(){return enabled;}
+    /** 新请求采用建议到期时间，重试以库存服务返回的首次到期时间为准。 */
+    public Admission hold(StockReservationRequest request){return call(request,"");}
+    /** 仅明确没有正式预留时取消；库存服务的墓碑会防止迟到请求重新扣票。 */
+    public Admission cancel(StockReservationRequest request){return call(request,"/cancel");}
+    private Admission call(StockReservationRequest request,String suffix){
+        try{return client.post().uri("/internal/stock-admissions"+suffix).contentType(MediaType.APPLICATION_JSON)
+            .header(com.byy.ticket.common.trace.TraceIdContext.HTTP_HEADER,com.byy.ticket.common.trace.TraceIdContext.getOrCreate())
+            .body(request).exchange((sent,received)->{
+                int code=received.getStatusCode().value();
+                if(code==409)throw new InventoryServiceCallException(Reason.CONFLICT,"库存准入拒绝，库存不足、原请求已取消或参数冲突");
+                if(!received.getStatusCode().is2xxSuccessful())throw new InventoryServiceCallException(Reason.UNAVAILABLE,"库存准入结果暂时未知，请使用同一编号核对");
+                var result=received.bodyTo(TYPE);var value=result==null?null:result.data();
+                if(result==null||!"OK".equals(result.code())||value==null||!request.orderId().equals(value.orderNo())
+                    ||!request.ticketTierId().equals(value.ticketTierId())||!request.sessionId().equals(value.sessionId())||!request.quantity().equals(value.quantity())
+                    ||value.expiresAt()==null||value.status()==null||!java.util.Set.of("HELD","APPLIED","CANCELLED","RELEASED").contains(value.status()))
+                    throw new InventoryServiceCallException(Reason.INVALID_RESPONSE,"库存准入响应不完整或归属错误");
+                return value;
+            });
+        }catch(ResourceAccessException failure){throw new InventoryServiceCallException(Reason.TIMEOUT,"库存准入结果未知，不能直接回补库存",failure);}
+        catch(RestClientException failure){throw new InventoryServiceCallException(Reason.INVALID_RESPONSE,"库存准入响应读取失败",failure);}
+        catch(IllegalStateException failure){if(failure.getMessage()!=null&&failure.getMessage().startsWith("No instances available for "))throw new InventoryServiceCallException(Reason.UNAVAILABLE,"库存服务无可用实例",failure);throw failure;}
+    }
+}

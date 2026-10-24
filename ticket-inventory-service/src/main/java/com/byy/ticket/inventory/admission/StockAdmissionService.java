@@ -31,6 +31,9 @@ public class StockAdmissionService {
     }
     public boolean enabled(){return enabled;}
 
+    /** 升级前已存在但尚未执行预留的订单也经过准入，已有事实直接由原幂等逻辑核对。 */
+    public void ensureForLegacy(ReserveStockDTO request){if(enabled&&admissions.find(request.orderId())==null)hold(request);}
+
     /** Lua 无票直接拒绝，不进入写事务；代次变化或响应丢失时使用相同编号重新核对。 */
     public StockAdmission hold(ReserveStockDTO request) {
         if(!enabled)throw new InventoryConflictException("Redis 库存预扣未启用");

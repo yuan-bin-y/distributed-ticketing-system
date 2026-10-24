@@ -47,6 +47,8 @@ public class OrderServiceImpl implements OrderService {
     private final OrderTransactionService transactions;
     private final OrderStockWorkflow workflow;
     private final OrderWorkflowProperties properties;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.order.client.StockAdmissionClient admissions;
 
     /**
      * 注入远程 Client、本服务的订单 Mapper、短事务与恢复组件；不访问其他服务的数据库。
@@ -96,13 +98,21 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("订单金额超出可保存范围");
         }
         TicketOrder order;
+        String orderNo=com.byy.ticket.order.service.PurchaseRequestId.of(userId,request.idempotencyKey());
+        var stockRequest=new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),
+                now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS));
+        LocalDateTime expiresAt=admissions.enabled()?admissions.hold(stockRequest).expiresAt():stockRequest.expiresAt();
         try {
-            order = PerformanceSpan.measure("local.transaction",()->transactions.create(userId, request, rule, amount, now,
-                    now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS)));
+            order = PerformanceSpan.measure("local.transaction",()->transactions.createAccepted(orderNo,userId,request,rule,amount,now,expiresAt));
         } catch (DuplicateKeyException exception) {
             existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
             if (existing == null) { throw exception; }
             return repeat(existing, request);
+        } catch(OrderConflictException rejected) {
+            // 本地事务已明确回滚，可取消准入；失败不掩盖原错误，库存后台在期限后继续核对。
+            if(admissions.enabled())try{admissions.cancel(new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),expiresAt));}
+            catch(RuntimeException uncertain){rejected.addSuppressed(uncertain);}
+            throw rejected;
         }
         Long orderId=order.getId();
         PerformanceSpan.measure("inventory.workflow",()->{workflow.advance(orderId);return null;});

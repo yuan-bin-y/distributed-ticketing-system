@@ -58,6 +58,7 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     public StockReservationVO reserve(ReserveStockDTO request) {
         validateRequest(request);
+        if(admissions!=null)admissions.ensureForLegacy(request);
         // 必须在开启事务前领取，且在事务提交/回滚以后释放。Redis只保护并发，SQL仍决定库存。
         try (HotStockGate.Permit permit=hotStockGate.acquire(request.ticketTierId())) {
             return reservationTransaction.execute(status -> reserveInTransaction(request));

@@ -1,3 +1,5 @@
+ticket.stock-admission.enabled: ${TICKET_STOCK_ADMISSION_ENABLED:false}
+
 server:
   shutdown: graceful
   port: ${ORDER_PORT:8062}

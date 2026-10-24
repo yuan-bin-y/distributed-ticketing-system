@@ -37,8 +37,19 @@ public class OrderTransactionService {
     @Transactional
     public TicketOrder create(Long userId, OrderCreateDTO request, TicketPurchaseRuleResponse rule,
                               BigDecimal amount, LocalDateTime now, LocalDateTime expiresAt) {
+        return save(UUID.randomUUID().toString().replace("-", ""),userId,request,rule,amount,now,expiresAt);
+    }
+
+    /** 预扣与正式订单使用同一稳定编号；仍只包含本地 SQL，不发送网络请求。 */
+    @Transactional
+    public TicketOrder createAccepted(String orderNo,Long userId,OrderCreateDTO request,TicketPurchaseRuleResponse rule,
+                                      BigDecimal amount,LocalDateTime now,LocalDateTime expiresAt){
+        return save(orderNo,userId,request,rule,amount,now,expiresAt);
+    }
+    private TicketOrder save(String orderNo,Long userId,OrderCreateDTO request,TicketPurchaseRuleResponse rule,
+                            BigDecimal amount,LocalDateTime now,LocalDateTime expiresAt){
         TicketOrder order = new TicketOrder();
-        order.setOrderNo(UUID.randomUUID().toString().replace("-", ""));
+        order.setOrderNo(orderNo);
         var context = traces.capture();
         order.setTraceParent(context.traceParent());
         order.setTraceState(context.traceState());
