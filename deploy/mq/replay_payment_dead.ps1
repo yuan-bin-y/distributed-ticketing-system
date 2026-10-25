@@ -1,7 +1,9 @@
 param([switch]$Replay,
-    [string]$JdkHome='C:\Users\RE\.jdks\ms-17.0.20')
+    [string]$JdkHome=$env:JAVA_HOME)
 $ErrorActionPreference='Stop'
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+. (Join-Path $projectRoot 'deploy/docker/common.ps1')
+$JdkHome=Resolve-TicketJdk $JdkHome
 $artifact=Join-Path $projectRoot 'ticket-order-service/target/ticket-order-service-1.0-SNAPSHOT.jar'
 $helperRoot=Join-Path $projectRoot '.local/payment-dead-replay'
 New-Item -ItemType Directory -Path $helperRoot -Force | Out-Null

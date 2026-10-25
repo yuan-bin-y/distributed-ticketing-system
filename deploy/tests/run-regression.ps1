@@ -3,7 +3,7 @@ param([switch]$Integration,[switch]$Redis,[switch]$RabbitMQ,
       [string]$MySqlBase=$env:TICKET_TEST_MYSQL_BASE,[string]$JdkHome=$env:JAVA_HOME)
 $ErrorActionPreference='Stop'
 . (Join-Path $PSScriptRoot '../docker/common.ps1')
-if(-not $JdkHome){throw '请设置JAVA_HOME为JDK17目录，或指定-JdkHome。'}
+$JdkHome=Resolve-TicketJdk $JdkHome
 if($RabbitMQ-and-not$Integration){throw 'RabbitMQ回归使用独立MySQL库，请同时指定-Integration。'}
 if($RedisPort-lt1-or$RedisPort-gt65535-or$RabbitMqPort-lt1-or$RabbitMqPort-gt65535){throw '测试端口范围必须为1至65535。'}
 $previousJava=$env:JAVA_HOME
@@ -27,7 +27,7 @@ try {
     }
     if($Redis){$arguments+='-Dticket.test.redis=true';$arguments+="-Dticket.test.redis.port=$RedisPort";if($Integration){$arguments+='-Dticket.test.prehold=true'}}
     if($RabbitMQ){$arguments+='-Dticket.test.rabbitmq=true';$arguments+="-Dticket.test.rabbitmq.port=$RabbitMqPort"}
-    & mvn.cmd @arguments
+    & (Join-Path $script:TicketProjectRoot 'mvnw.cmd') @arguments
     if($LASTEXITCODE -ne 0){throw '自动回归失败；查看各模块target/surefire-reports。'}
 } finally {
     $env:JAVA_HOME=$previousJava

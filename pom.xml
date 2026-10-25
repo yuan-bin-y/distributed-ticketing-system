@@ -41,6 +41,16 @@
         <drools.version>10.1.0</drools.version>
     </properties>
 
+    <build><plugins><plugin>
+        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-enforcer-plugin</artifactId><version>3.5.0</version>
+        <executions><execution><id>toolchain</id><goals><goal>enforce</goal></goals>
+            <configuration><rules>
+                <requireJavaVersion><version>[17,18)</version><message>请使用JDK 17运行构建。</message></requireJavaVersion>
+                <requireMavenVersion><version>[3.9,4)</version><message>请使用项目Maven Wrapper或Maven 3.9。</message></requireMavenVersion>
+            </rules></configuration>
+        </execution></executions>
+    </plugin></plugins></build>
+
     <!-- 导入版本清单；子模块仍须在自己的 dependencies 中引入所需组件。 -->
     <dependencyManagement>
         <dependencies>

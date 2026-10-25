@@ -17,6 +17,10 @@
 
 ## 启动
 
+构建使用仓库内的 `mvnw.cmd`（Windows）或 `./mvnw`（Linux），固定 Maven 3.9.14，并校验 JDK17。
+首次使用Wrapper需要下载Maven；依赖默认缓存在用户的 `.m2/repository`，不放入 `target`。
+设置 `JAVA_HOME` 或使用 `-JdkHome`；脚本也可从PATH中的 `javac.exe` 定位JDK，不包含个人电脑路径。
+
 ### 双击启动（Windows）
 
 在项目根目录直接双击：

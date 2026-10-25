@@ -15,12 +15,7 @@ Push-Location $script:TicketProjectRoot
 try {
     & $script:TicketDocker info --format '{{.OSType}}' | Out-Null
     if($LASTEXITCODE -ne 0){throw 'Docker引擎未运行，请启动Docker Desktop。'}
-    if(-not $JdkHome){$JdkHome=Read-TicketVariable 'JAVA_HOME'}
-    if(-not $JdkHome -or -not (Test-Path -LiteralPath (Join-Path $JdkHome 'bin/java.exe'))) {
-        $installed=Join-Path $env:USERPROFILE '.jdks/ms-17.0.20'
-        if(Test-Path -LiteralPath (Join-Path $installed 'bin/java.exe')){$JdkHome=$installed}
-        else{throw '请用-JdkHome指定JDK17安装目录。'}
-    }
+    $JdkHome=Resolve-TicketJdk $JdkHome
     $java=Join-Path $JdkHome 'bin/java.exe'
     if(-not (Test-Path -LiteralPath '.local/auth-keys/private.pem') -and -not (Test-Path -LiteralPath '.local/auth-keys/public.pem')) {
         & $java deploy/auth/GenerateAuthKeys.java
@@ -38,16 +33,12 @@ try {
     }
     if(-not $SkipPackage) {
         if(-not $MavenCommand) {
-            $found=Get-Command mvn.cmd -ErrorAction SilentlyContinue
-            if($found){$MavenCommand=$found.Source}
-            elseif(Test-Path -LiteralPath 'D:/develop/apache-maven-3.9.14-bin/apache-maven-3.9.14/bin/mvn.cmd') {
-                $MavenCommand='D:/develop/apache-maven-3.9.14-bin/apache-maven-3.9.14/bin/mvn.cmd'
-            }else{throw '请指定-MavenCommand，或在IDEA执行package后使用-SkipPackage。'}
+            $MavenCommand=Join-Path $script:TicketProjectRoot 'mvnw.cmd'
         }
         $previousJavaHome=$env:JAVA_HOME
         try {
             $env:JAVA_HOME=$JdkHome
-            & $MavenCommand '-Dmaven.repo.local=target/.m2' package -DskipTests -q
+            & $MavenCommand package -DskipTests -q
             if($LASTEXITCODE -ne 0){throw 'Maven打包失败。'}
         } finally { $env:JAVA_HOME=$previousJavaHome }
     }

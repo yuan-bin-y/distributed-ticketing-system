@@ -21,6 +21,22 @@ function Read-TicketVariable([string]$Name) {
     return $null
 }
 
+function Resolve-TicketJdk([string]$JdkHome) {
+    if(-not $JdkHome){$JdkHome=Read-TicketVariable 'JAVA_HOME'}
+    if(-not $JdkHome){
+        $compiler=Get-Command javac.exe -ErrorAction SilentlyContinue
+        if($compiler){$JdkHome=Split-Path (Split-Path $compiler.Source -Parent) -Parent}
+    }
+    if(-not $JdkHome -or -not(Test-Path -LiteralPath (Join-Path $JdkHome 'bin/javac.exe'))){
+        throw '请设置JAVA_HOME或用-JdkHome指定JDK17目录。'
+    }
+    $version=& (Join-Path $JdkHome 'bin/javac.exe') -version 2>&1
+    if($LASTEXITCODE -ne 0 -or "$version" -notmatch 'javac 17(?:\.|\s|$)'){
+        throw '此项目使用JDK17，请检查JAVA_HOME或-JdkHome。'
+    }
+    return [IO.Path]::GetFullPath($JdkHome)
+}
+
 function Get-TicketLocalSecret([string]$Name) {
     $directory=Join-Path $script:TicketProjectRoot '.local/docker'
     New-Item -ItemType Directory -Path $directory -Force | Out-Null
