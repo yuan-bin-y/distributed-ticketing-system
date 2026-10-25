@@ -41,6 +41,14 @@ public class StockAdmissionService {
         if(!enabled)throw new InventoryConflictException("Redis 库存预扣未启用");
         validate(request);
         var candidate=record(request,"HELD");
+        // 已有编号按主键核对，历史成交记录无需常驻Redis。首次请求仍由Lua筛掉热行写事务。
+        var previous=admissions.find(candidate.orderNo());
+        if(previous!=null){
+            requireSame(previous,candidate);
+            if("APPLIED".equals(previous.status()))return previous;
+            if("HELD".equals(previous.status())&&previous.expiresAt().isAfter(LocalDateTime.now(clock)))return previous;
+            throw new InventoryConflictException("原预扣已结束或到期，不能重新占票");
+        }
         String fingerprint=RedisStockLedger.fingerprint(candidate);
         String claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint,request.seatIds());
         if("NOT_READY".equals(claim)){rebuild(candidate.ticketTierId());claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint,request.seatIds());}
@@ -115,8 +123,7 @@ public class StockAdmissionService {
             if(held>stock.getAvailableQuantity())throw new IllegalStateException("待落实预扣超过可用库存，停止准入并核对");
             String epoch=UUID.randomUUID().toString().replace("-","");
             admissions.rebuilt(tier,epoch);
-            var dedup=new ArrayList<>(pending);dedup.addAll(admissions.applied(tier));
-            ledger.reset(tier,epoch,(int)(stock.getAvailableQuantity()-held),dedup,Integer.valueOf(1).equals(stock.getSeatMode()),seats==null?List.of():seats.available(tier));
+            ledger.reset(tier,epoch,(int)(stock.getAvailableQuantity()-held),pending,Integer.valueOf(1).equals(stock.getSeatMode()),seats==null?List.of():seats.available(tier));
             // 若 SQL 提交失败，Redis 代次也不能被接受：hold 的落库检查会检测不匹配并重新核对。
             metrics.counter("ticket.inventory.prehold.rebuild").increment();
         });
@@ -124,6 +131,21 @@ public class StockAdmissionService {
     /** 超时只触发核对，不依赖 TTL 删除账本。失败时保留原记录并在下一轮继续。 */
     @Scheduled(fixedDelayString="${ticket.stock-admission.reconcile-ms:5000}")
     public void reconcile(){if(enabled)for(long tier:admissions.due())try{rebuild(tier);}catch(RuntimeException failure){log.warn("库存预扣账本待恢复，tier={}",tier);}}
+
+    /** 每轮最多迁移200条终态，保留按编号核对凭据；仍在RESERVED的订单绝不归档。 */
+    public int archive(int retentionDays){
+        if(retentionDays<1)throw new IllegalArgumentException("终态保留期至少1天");
+        var cutoff=LocalDateTime.now(clock).minusDays(retentionDays);int count=0;
+        for(var candidate:admissions.archiveCandidates(cutoff)){
+            Integer changed=transaction.execute(status->{
+                stocks.selectForUpdate(candidate.ticketTierId());
+                admissions.archive(candidate.orderNo(),cutoff);
+                return admissions.removeArchived(candidate.orderNo());
+            });
+            count+=changed==null?0:changed;
+        }
+        metrics.counter("ticket.inventory.prehold.archived").increment(count);return count;
+    }
 
     private void requireSame(StockAdmission left,StockAdmission right) {
         if(left==null||!left.ticketTierId().equals(right.ticketTierId())||!RedisStockLedger.fingerprint(left).equals(RedisStockLedger.fingerprint(right)))

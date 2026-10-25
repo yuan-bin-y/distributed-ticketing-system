@@ -271,7 +271,8 @@ $backup = ./deploy/ha/backup.ps1
 并在实际环境验证分区、整机故障、全停恢复、容量与RPO/RTO。
 当前可选HA栈不包含额外监控集群；日常部署的Prometheus/Grafana仍保留，
 跨环境接入时应另外配置采集目标。项目中的支付、冲正仍为模拟业务。
-# 订单人工核对
+
+## 订单人工核对
 
 管理员可通过 `GET /api/orders/admin/reviews?after=0&limit=20` 查询待核对订单，
 通过 `GET /api/orders/admin/reviews/{orderNo}` 查看订单快照、远程事实和最近50条处理记录。
@@ -292,3 +293,11 @@ $backup = ./deploy/ha/backup.ps1
 正常租约60秒，宕机命令65秒后可接管，旧任务不能覆盖新处理进度。
 恢复结果可能是待支付、付款确认或关闭中；最终结果继续查询原订单。
 
+## 预扣账本容量
+
+Redis 重建只装载有效 HELD 请求和可用座位，临时哈希每批写入256项，完成后原子切换代次。
+历史请求按稳定编号查询数据库凭据，因此幂等核对仍有主键读取成本，Redis主要减少热行写事务。
+终态默认保留7天，每60秒最多归档200条；`ticket.stock-admission.retention-days` 至少为1。
+`APPLIED` 只有原预留已为SOLD才能归档；RESERVED和HELD记录继续保留。
+归档表 `t_stock_admission_receipt` 保留原请求、参数和终态，取消墓碑不会随Redis重建丢失。
+归档凭据属于历史业务资料，当前不自动删除；可观察 `ticket_inventory_prehold_archived_total`。

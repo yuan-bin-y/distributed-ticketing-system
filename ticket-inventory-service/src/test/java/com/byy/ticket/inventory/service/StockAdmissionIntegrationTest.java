@@ -148,4 +148,38 @@ class StockAdmissionIntegrationTest {
         sql.update("UPDATE t_ticket_stock SET available_quantity=0,reserved_quantity=1 WHERE ticket_tier_id=116");admission.rebuild(116);
         assertEquals(id,inventory.reserve(request).reservationId());assertEquals(0,sql.queryForObject("SELECT COUNT(*) FROM t_stock_admission WHERE ticket_tier_id=116",Integer.class));
     }
+
+    @Test void historyIsNotRebuiltAndArchivedReceiptStillReturnsOriginalSale(){
+        stock(117,400);var expiry=LocalDateTime.now(ZoneOffset.ofHours(8)).minusDays(9).truncatedTo(ChronoUnit.MILLIS);
+        for(int index=0;index<300;index++){
+            String id="history_"+index;
+            sql.update("INSERT INTO t_stock_admission(order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint) VALUES(?,117,1,1,?,'APPLIED','')",id,expiry);
+            sql.update("INSERT INTO t_stock_reservation(reservation_id,order_id,ticket_tier_id,session_id,quantity,expires_at,status) VALUES(?,?,117,1,1,?,'SOLD')",UUID.randomUUID().toString().replace("-",""),id,expiry);
+        }
+        sql.update("UPDATE t_ticket_stock SET available_quantity=100,sold_quantity=300 WHERE ticket_tier_id=117");
+        admission.rebuild(117);
+        assertEquals(0L,redis.opsForHash().size(PREFIX+"{117}:holds"));assertEquals(100,available(117));
+        assertEquals(200,admission.archive(7));assertEquals(100,admission.archive(7));
+        assertEquals(0,sql.queryForObject("SELECT COUNT(*) FROM t_stock_admission WHERE ticket_tier_id=117",Integer.class));
+        var request=new ReserveStockDTO("history_0",1L,117L,1,expiry);
+        assertEquals("APPLIED",admission.hold(request).status());assertEquals("SOLD",inventory.reserve(request).status());assertEquals(100,available(117));
+    }
+
+    @Test void archiveKeepsReservedFactsAndCancellationTombstonesRemainEffective(){
+        stock(118,2);var reserved=request(118,"archive_reserved");admission.hold(reserved);inventory.reserve(reserved);
+        var cancelled=request(118,"archive_cancelled");admission.hold(cancelled);admission.cancel(cancelled);
+        sql.update("UPDATE t_stock_admission SET expires_at=TIMESTAMPADD(DAY,-9,CURRENT_TIMESTAMP(3)) WHERE ticket_tier_id=118");
+        admission.archive(7);
+        assertEquals(1,sql.queryForObject("SELECT COUNT(*) FROM t_stock_admission WHERE order_no='archive_reserved'",Integer.class));
+        assertEquals(1,sql.queryForObject("SELECT COUNT(*) FROM t_stock_admission_receipt WHERE order_no='archive_cancelled'",Integer.class));
+        assertThrows(RuntimeException.class,()->admission.hold(cancelled));
+        assertEquals("CANCELLED",admission.cancel(cancelled).status());
+    }
+
+    @Test void stagingRebuildLoadsActiveRowsInSmallBatches(){
+        stock(119,600);var expires=LocalDateTime.now(ZoneOffset.ofHours(8)).plusMinutes(5).truncatedTo(ChronoUnit.MILLIS);
+        for(int index=0;index<300;index++)sql.update("INSERT INTO t_stock_admission(order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint) VALUES(?,119,1,1,?,'HELD','')","batch_"+index,expires);
+        admission.rebuild(119);assertEquals(300,available(119));assertEquals(300L,redis.opsForHash().size(PREFIX+"{119}:holds"));
+        assertTrue(redis.keys(PREFIX+"{119}:build:*").isEmpty());
+    }
 }
