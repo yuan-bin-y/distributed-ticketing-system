@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1480" height="1260" viewBox="0 0 1480 1260" role="img" aria-labelledby="title description">
+  <title id="title">分布式票务平台：服务架构与交易协作</title>
+  <desc id="description">用户与管理员通过 Gateway 访问 Auth、Event、Order 和 Payment。Order 通过 HTTP 查询 Event 规则、调用 Inventory 预扣及预留库存、调用 Payment 创建支付与核对付款。Event 初始化 Inventory 库存和座位。Payment 通过 Outbox 发布付款成功事件，Order 通过独立 Outbox 发布建单事件，并消费 RabbitMQ 中的建单和付款成功消息。Nacos、Redis、各服务业务库及追踪监控为服务提供公共支撑。</desc>
+  <defs>
+    <marker id="http" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#647b96"/></marker>
+    <marker id="mq" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#c1842a"/></marker>
+    <marker id="support" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0 0 8 4 0 8Z" fill="#98a5b5"/></marker>
+    <style>
+      text{font-family:"Microsoft YaHei","PingFang SC",Arial,sans-serif;fill:#25364c}
+      .heading{font-size:26px;font-weight:700}
+      .name{font-size:22px;font-weight:700;text-anchor:middle}
+      .body{font-size:18px;text-anchor:middle}
+      .small{font-size:15px;fill:#607087;text-anchor:middle}
+      .label{font-size:16px;text-anchor:middle;fill:#536b88}
+      .http{fill:none;stroke:#647b96;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+      .message{fill:none;stroke:#c1842a;stroke-width:2.2;stroke-dasharray:8 7;stroke-linecap:round;stroke-linejoin:round}
+      .support{fill:none;stroke:#98a5b5;stroke-width:2;stroke-dasharray:5 6}
+      .card{stroke-width:1.5}
+      .white{fill:#fff}
+    </style>
+  </defs>
+
+  <rect width="1480" height="1260" fill="#fff"/>
+  <text x="40" y="45" class="heading">服务架构与交易协作</text>
+  <path d="M906 37H953" class="http" marker-end="url(#http)"/>
+  <text x="968" y="43" font-size="15">HTTP 调用</text>
+  <path d="M1087 37H1134" class="message" marker-end="url(#mq)"/>
+  <text x="1149" y="43" font-size="15">MQ 事件</text>
+  <path d="M1261 37H1308" class="support"/>
+  <text x="1323" y="43" font-size="15">公共支撑</text>
+
+  <!-- 入口与四条公开路由共用一条分发线。 -->
+  <rect x="590" y="84" width="300" height="54" rx="27" fill="#f1f5fa" stroke="#d7e0eb"/>
+  <text x="740" y="118" class="body">用户购票页 / 管理员 API</text>
+  <path d="M740 138V180" class="http" marker-end="url(#http)"/>
+  <rect x="560" y="180" width="360" height="80" rx="14" fill="#233b59"/>
+  <text x="740" y="212" class="name white">Gateway 统一入口</text>
+  <text x="740" y="239" class="body white">JWT 认证 · 路由 · Redis Lua 限流</text>
+  <path d="M740 260V316M160 316H1300" class="http"/>
+  <circle cx="740" cy="316" r="4" fill="#647b96"/>
+
+  <rect x="28" y="365" width="1424" height="465" rx="20" fill="#f8fafc" stroke="#e3e9f1"/>
+  <path d="M160 316V376" class="http" marker-end="url(#http)"/>
+  <path d="M500 316V376" class="http" marker-end="url(#http)"/>
+  <path d="M900 316V376" class="http" marker-end="url(#http)"/>
+  <path d="M1300 316V376" class="http" marker-end="url(#http)"/>
+  <rect x="82" y="329" width="156" height="29" rx="8" fill="#fff"/>
+  <rect x="363" y="329" width="274" height="29" rx="8" fill="#fff"/>
+  <rect x="811" y="329" width="178" height="29" rx="8" fill="#fff"/>
+  <rect x="1196" y="329" width="208" height="29" rx="8" fill="#fff"/>
+  <text x="160" y="348" class="label">/api/auth/**</text>
+  <text x="500" y="348" class="label">/api/events/** · 管理接口</text>
+  <text x="900" y="348" class="label">/api/orders/**</text>
+  <text x="1300" y="348" class="label">/api/payments/**</text>
+
+  <!-- 同层 HTTP 调用使用独立的横向通道。 -->
+  <path d="M790 415H610" class="http" marker-end="url(#http)"/>
+  <text x="700" y="400" class="label">查询购票规则</text>
+  <path d="M1010 415H1190" class="http" marker-end="url(#http)"/>
+  <text x="1100" y="400" class="label">创建支付 / 核对 / 冲正</text>
+
+  <rect x="50" y="376" width="220" height="112" rx="14" fill="#f3effc" stroke="#c7b8e4" class="card"/>
+  <text x="160" y="409" class="name">Auth 认证</text>
+  <text x="160" y="439" class="body">用户 · JWT · Redis 会话</text>
+  <text x="160" y="465" class="small">RS256 签名 · BCrypt</text>
+
+  <rect x="390" y="376" width="220" height="112" rx="14" fill="#edf4ff" stroke="#9dbbea" class="card"/>
+  <text x="500" y="409" class="name">Event 活动</text>
+  <text x="500" y="439" class="body">活动 · 场次 · 票档 · 规则</text>
+  <text x="500" y="465" class="small">库存准备 · 发布 · 规则版本</text>
+
+  <rect x="790" y="376" width="220" height="112" rx="14" fill="#ecf8f2" stroke="#8bc0a3" class="card"/>
+  <text x="900" y="409" class="name">Order 订单</text>
+  <text x="900" y="439" class="body">建单 · 限购 · 履约 · 电子票</text>
+  <text x="900" y="465" class="small">Outbox · 消费幂等 · 恢复</text>
+
+  <rect x="1190" y="376" width="220" height="112" rx="14" fill="#fff3e8" stroke="#e7b68c" class="card"/>
+  <text x="1300" y="409" class="name">Payment 支付</text>
+  <text x="1300" y="439" class="body">模拟付款 · 付款事实 · 冲正</text>
+  <text x="1300" y="465" class="small">付款成功与 Outbox 同事务</text>
+
+  <!-- 两条库存调用从上方进入，MQ 在右侧使用两条独立折线。 -->
+  <path d="M500 488V594H640V650" class="http" marker-end="url(#http)"/>
+  <rect x="402" y="523" width="196" height="35" rx="8" fill="#f8fafc"/>
+  <text x="500" y="545" class="label">初始化库存与座位</text>
+  <path d="M850 488V650" class="http" marker-end="url(#http)"/>
+  <rect x="728" y="535" width="250" height="53" rx="8" fill="#f8fafc"/>
+  <text x="853" y="555" class="label">预扣 / 正式预留</text>
+  <text x="853" y="578" class="label">确认售出 / 释放 / 座位查询</text>
+
+  <path d="M1300 488V650" class="message" marker-end="url(#mq)"/>
+  <rect x="1201" y="543" width="198" height="36" rx="8" fill="#f8fafc"/>
+  <text x="1300" y="566" font-size="15" fill="#986721" text-anchor="middle">付款成功 Outbox</text>
+  <path d="M1010 460H1090V685H1150" class="message" marker-end="url(#mq)"/>
+  <path d="M1150 735H1040V510H960V488" class="message" marker-end="url(#mq)"/>
+  <text x="1090" y="628" font-size="14" fill="#986721" text-anchor="middle">建单发布 ↓</text>
+  <text x="991" y="751" font-size="14" fill="#986721" text-anchor="middle">事件消费 ↑</text>
+
+  <rect x="560" y="650" width="380" height="132" rx="14" fill="#eef7f7" stroke="#96bfc2" class="card"/>
+  <text x="750" y="686" class="name">Inventory 库存</text>
+  <text x="750" y="719" class="body">Redis Lua 预扣 · 持久化预扣账本</text>
+  <text x="750" y="747" class="body">正式预留 · 座位状态 · 确认与释放</text>
+  <text x="750" y="770" class="small">MySQL 条件更新与事务保护最终库存</text>
+
+  <rect x="1150" y="650" width="280" height="132" rx="14" fill="#fff9e9" stroke="#ddc084" class="card"/>
+  <text x="1290" y="686" class="name">RabbitMQ</text>
+  <text x="1290" y="719" class="body">付款成功 / 异步建单</text>
+  <text x="1290" y="747" class="body">Confirm · 重试 · 死信</text>
+  <text x="1290" y="770" class="small">Order 消费并核对持久化事实</text>
+
+  <!-- 共有依赖在下方列明用途，避免为每个服务重复画线。 -->
+  <path d="M740 830V930" class="support" marker-end="url(#support)"/>
+  <rect x="489" y="860" width="502" height="37" rx="18" fill="#fff"/>
+  <text x="740" y="884" class="body" fill="#607087">公共支撑：注册配置、Redis 状态与业务数据</text>
+  <rect x="28" y="930" width="1424" height="206" rx="20" fill="#f8fafc" stroke="#e3e9f1"/>
+  <text x="740" y="961" class="body" font-weight="700">公共基础设施</text>
+
+  <rect x="52" y="983" width="410" height="127" rx="12" fill="#fff" stroke="#dce4ee"/>
+  <text x="257" y="1018" class="name">Nacos</text>
+  <text x="257" y="1051" class="body">服务注册发现 · 集中配置</text>
+  <text x="257" y="1081" class="small">Gateway + 五个业务服务</text>
+  <rect x="534" y="983" width="410" height="127" rx="12" fill="#fff" stroke="#dce4ee"/>
+  <text x="739" y="1018" class="name">Redis</text>
+  <text x="739" y="1051" class="body">Auth 会话 · Gateway 限流</text>
+  <text x="739" y="1081" class="small">Event 缓存 · Inventory Lua 预扣</text>
+  <rect x="1016" y="983" width="410" height="127" rx="12" fill="#fff" stroke="#dce4ee"/>
+  <text x="1221" y="1018" class="name">MySQL</text>
+  <text x="1221" y="1051" class="body">五个业务库 · 各服务独立读写</text>
+  <text x="1221" y="1081" class="small">Flyway · 本地事务 · 持久化账本</text>
+
+  <rect x="28" y="1164" width="1424" height="72" rx="12" fill="#f5f7fa" stroke="#e3e9f1"/>
+  <text x="58" y="1206" font-size="19" font-weight="700">可观测性</text>
+  <text x="230" y="1193" font-size="16">追踪：Micrometer / OpenTelemetry → Tempo → Grafana</text>
+  <text x="230" y="1220" font-size="16" fill="#607087">指标：Prometheus → Grafana · 恢复积压 / 消费重试 / 人工核对告警</text>
+</svg>
