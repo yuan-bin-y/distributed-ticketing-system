@@ -31,6 +31,7 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
     private final ClientIpResolver clientIp;
     private final boolean enabled; private final String prefix;
     private final int eventRate,eventBurst,eventClientRate,eventClientBurst,orderRate,orderBurst,orderClientRate,orderClientBurst;
+    private final int authRate, authBurst, authClientRate, authClientBurst;
     public GatewayRateLimitFilter(ReactiveStringRedisTemplate redis,GatewaySecurityResponses responses,
         @Value("${ticket.rate-limit.enabled:true}") boolean enabled,
         @Value("${ticket.rate-limit.prefix:ticket:{gateway-limit}:}") String prefix,
@@ -41,13 +42,18 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
         @Value("${ticket.rate-limit.order-rate:100}") int orderRate,
         @Value("${ticket.rate-limit.order-burst:200}") int orderBurst,
         @Value("${ticket.rate-limit.order-client-rate:5}") int orderClientRate,
-        @Value("${ticket.rate-limit.order-client-burst:10}") int orderClientBurst,ClientIpResolver clientIp) {
+        @Value("${ticket.rate-limit.order-client-burst:10}") int orderClientBurst,ClientIpResolver clientIp,
+        @Value("${ticket.rate-limit.auth-rate:20}") int authRate,
+        @Value("${ticket.rate-limit.auth-burst:50}") int authBurst,
+        @Value("${ticket.rate-limit.auth-client-rate:1}") int authClientRate,
+        @Value("${ticket.rate-limit.auth-client-burst:10}") int authClientBurst) {
         if(java.util.stream.IntStream.of(eventRate,eventBurst,eventClientRate,eventClientBurst,orderRate,orderBurst,
-            orderClientRate,orderClientBurst).anyMatch(v->v<1))throw new IllegalArgumentException("限流参数必须大于零");
+            orderClientRate,orderClientBurst,authRate,authBurst,authClientRate,authClientBurst).anyMatch(v->v<1))throw new IllegalArgumentException("限流参数必须大于零");
         this.redis=redis;this.responses=responses;this.enabled=enabled;this.prefix=prefix;
         this.clientIp=clientIp;
         this.eventRate=eventRate;this.eventBurst=eventBurst;this.eventClientRate=eventClientRate;this.eventClientBurst=eventClientBurst;
         this.orderRate=orderRate;this.orderBurst=orderBurst;this.orderClientRate=orderClientRate;this.orderClientBurst=orderClientBurst;
+        this.authRate=authRate; this.authBurst=authBurst; this.authClientRate=authClientRate; this.authClientBurst=authClientBurst;
     }
     @Override public int getOrder(){return -100;}
     /** 根据路由范围取得可信身份，异步检查两个桶后转发或返回429/503。 */
@@ -56,13 +62,15 @@ public class GatewayRateLimitFilter implements GlobalFilter,Ordered {
         boolean event=exchange.getRequest().getMethod()==HttpMethod.GET &&
             (path.equals("/api/events")||path.startsWith("/api/events/"));
         boolean order=path.equals("/api/orders")||path.startsWith("/api/orders/");
-        if(!enabled||(!event&&!order)||path.endsWith("/ping"))return chain.filter(exchange);
-        String scope=event?"events":"orders";
+        boolean auth=exchange.getRequest().getMethod()==HttpMethod.POST &&
+            Set.of("/api/auth/register","/api/auth/login","/api/auth/refresh").contains(path);
+        if(!enabled||(!event&&!order&&!auth)||path.endsWith("/ping"))return chain.filter(exchange);
+        String scope=auth?"auth":event?"events":"orders";
         String ip=clientIp.resolve(exchange.getRequest());
-        return exchange.getPrincipal().map(p->"user:"+p.getName()).defaultIfEmpty("ip:"+ip).flatMap(identity->{
+        return (auth?Mono.just("ip:"+ip):exchange.getPrincipal().map(p->"user:"+p.getName()).defaultIfEmpty("ip:"+ip)).flatMap(identity->{
             String client=hash(identity);
-            List<String> args=List.of(Integer.toString(event?eventRate:orderRate),Integer.toString(event?eventBurst:orderBurst),
-                Integer.toString(event?eventClientRate:orderClientRate),Integer.toString(event?eventClientBurst:orderClientBurst));
+            List<String> args=List.of(Integer.toString(auth?authRate:event?eventRate:orderRate),Integer.toString(auth?authBurst:event?eventBurst:orderBurst),
+                Integer.toString(auth?authClientRate:event?eventClientRate:orderClientRate),Integer.toString(auth?authClientBurst:event?eventClientBurst:orderClientBurst));
             return redis.execute(LIMIT,List.of(prefix+scope+":global",prefix+scope+":client:"+client),args)
                 .next().timeout(Duration.ofMillis(500)).defaultIfEmpty(-1L).onErrorReturn(-1L)
                 .flatMap(allowed->{

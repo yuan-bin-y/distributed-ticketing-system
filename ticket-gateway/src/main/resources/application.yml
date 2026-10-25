@@ -1,8 +1,11 @@
 server:
+  shutdown: graceful
   forward-headers-strategy: none
   port: ${GATEWAY_PORT:8060}
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   reactor:
     context-propagation: auto
   application:
@@ -79,6 +82,16 @@ ticket:
 
 # 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,redis
+      validate-group-membership: false
   server:
     port: ${TICKET_MANAGEMENT_PORT:-1}
     address: ${TICKET_MANAGEMENT_ADDRESS:127.0.0.1}

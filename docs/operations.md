@@ -313,3 +313,11 @@ GitHub Actions使用独立服务运行完整集成 profile，检查关键测试�
 ## 库存协议检查
 
 新下单通过带Order服务凭证的 `/internal/inventory/capabilities` 检查协议版本和Redis准入开关。Order与Inventory使用相同的 `TICKET_STOCK_ADMISSION_ENABLED`；失配返回明确的配置错误，不会自动切换扣量方式。成功能力缓存两秒，后台每三秒核对，就绪探针读取最近结果。旧订单重试先查原记录，恢复流程继续按原幂等事实处理。
+
+## 存活、就绪与停机
+
+`/livez`只反映进程生命周期；`/readyz`检查服务当前能否接收业务请求。Auth、Order、Payment检查数据库及会话Redis；Inventory仅在预扣开启时检查Redis；Event缓存允许Redis故障后受控回源，因此就绪只依赖数据库。Order额外检查库存协议。探针仅返回状态，详细指标仍在独立管理端口。原ping保留用于简单连通检查。
+
+Compose健康检查使用readyz。网关按三秒缓存主动检查目标实例readyz，全部未就绪时返回无可用服务，不回退到故障实例；探针超时800ms。Nacos注册本身不替代依赖检查。Broker故障由Outbox保留进度，不作为已付款操作的丢弃理由。
+
+六个服务显式启用优雅停机，单阶段20秒，Compose等待30秒。后台线程池有独立、有界队列和等待预算。登录、注册、刷新共享IP限流桶，默认每IP每秒1次、突发10次，另有全局桶；Redis限流失败返回503，不绕过检查。此限制在网关生效，直连业务端口仍只用于本地诊断。

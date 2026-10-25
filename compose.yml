@@ -134,7 +134,7 @@ services:
     depends_on: *base-dependencies
     healthcheck:
       <<: *ready
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8065/api/auth/ping"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8065/readyz"]
 
   inventory:
     <<: *app
@@ -150,7 +150,7 @@ services:
     depends_on: *base-dependencies
     healthcheck:
       <<: *ready
-      test: ["CMD-SHELL", "code=$$(curl -s -o /dev/null -w '%{http_code}' -H \"X-Order-Inventory-Credential: $$(cat /run/secrets/order-inventory-token)\" http://127.0.0.1:8063/internal/stocks/1); [ \"$$code\" = 200 ] || [ \"$$code\" = 404 ]"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8063/readyz"]
 
   event:
     <<: *app
@@ -169,7 +169,7 @@ services:
       auth: {condition: service_healthy}
     healthcheck:
       <<: *ready
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8061/api/events/ping"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8061/readyz"]
 
   payment:
     <<: *app
@@ -193,7 +193,7 @@ services:
       auth: {condition: service_healthy}
     healthcheck:
       <<: *ready
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8064/api/payments/ping"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8064/readyz"]
 
   order:
     <<: *app
@@ -223,7 +223,7 @@ services:
       payment: {condition: service_healthy}
     healthcheck:
       <<: *ready
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8062/api/orders/ping"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8062/readyz"]
 
   gateway:
     <<: *app
@@ -239,7 +239,7 @@ services:
       payment: {condition: service_healthy}
     healthcheck:
       <<: *ready
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8060/api/auth/ping"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8060/readyz"]
 
   tempo:
     image: grafana/tempo:2.9.0

@@ -24,10 +24,10 @@ public class PaymentSecurityConfig {
     public org.springframework.security.web.SecurityFilterChain managementSecurity(
             org.springframework.security.config.annotation.web.builders.HttpSecurity http,
             @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
-        return http.securityMatcher(request -> port>0 && request.getLocalPort()==port)
+        return http.securityMatcher(request -> (port>0 && request.getLocalPort()==port) || "/readyz".equals(request.getRequestURI()) || "/livez".equals(request.getRequestURI()))
                 .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
                 .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
-                        "/actuator/health","/actuator/prometheus").permitAll().anyRequest().denyAll()).build();
+                        "/actuator/health","/actuator/health/**","/actuator/prometheus","/readyz","/livez").permitAll().anyRequest().denyAll()).build();
     }
     /** 仅允许Order创建支付单、按订单查询及发起冲正，其他internal路径或方法拒绝。 */
     @Bean

@@ -1,9 +1,12 @@
 ticket.stock-admission.enabled: ${TICKET_STOCK_ADMISSION_ENABLED:false}
 
 server:
+  shutdown: graceful
   port: ${INVENTORY_PORT:8063}
 
 spring:
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
   data:
     redis:
       host: ${LOCAL_REDIS_HOST:127.0.0.1}
@@ -46,6 +49,16 @@ ticket:
     credential-path: ${EVENT_INVENTORY_CREDENTIAL_PATH:.local/service-credentials/event-inventory.token}
 # 保留标准 HTTP 追踪上下文；本机启动 Tempo 后再开启导出，避免无接收端时反复报错。
 management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+        add-additional-paths: true
+      show-details: never
+      group:
+        readiness:
+          include: readinessState,db,redis
+      validate-group-membership: false
   server:
     port: ${TICKET_MANAGEMENT_PORT:-1}
     address: ${TICKET_MANAGEMENT_ADDRESS:127.0.0.1}
@@ -77,3 +90,6 @@ management:
           endpoint: ${TICKET_OTLP_ENDPOINT:http://127.0.0.1:4318/v1/traces}
           connect-timeout: 2s
           timeout: 3s
+
+spring.datasource.hikari.connection-timeout: 2000
+management.health.redis.enabled: ${TICKET_STOCK_ADMISSION_ENABLED:false}

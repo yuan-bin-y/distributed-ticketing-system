@@ -22,10 +22,10 @@ public class EventSecurityConfig {
     public org.springframework.security.web.SecurityFilterChain managementSecurity(
             org.springframework.security.config.annotation.web.builders.HttpSecurity http,
             @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
-        return http.securityMatcher(request -> port>0 && request.getLocalPort()==port)
+        return http.securityMatcher(request -> (port>0 && request.getLocalPort()==port) || "/readyz".equals(request.getRequestURI()) || "/livez".equals(request.getRequestURI()))
                 .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
                 .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
-                        "/actuator/health","/actuator/prometheus").permitAll().anyRequest().denyAll()).build();
+                        "/actuator/health","/actuator/health/**","/actuator/prometheus","/readyz","/livez").permitAll().anyRequest().denyAll()).build();
     }
     @Bean OrderEventCredential orderEventCredential(OrderEventCredentialProperties properties)throws java.io.IOException{return new OrderEventCredential(properties);}
     /** 内部购票规则只接受Order服务身份；用户和管理员JWT不能替代服务凭证。 */

@@ -21,11 +21,12 @@ public class GatewaySecurityConfig {
             @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) {
         return http.securityMatcher(exchange -> {
                     var address=exchange.getRequest().getLocalAddress();
-                    return port>0 && address!=null && address.getPort()==port
+                    String path=exchange.getRequest().getPath().value();
+                    return (port>0 && address!=null && address.getPort()==port) || path.equals("/readyz") || path.equals("/livez")
                         ? org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.match()
                         : org.springframework.security.web.server.util.matcher.ServerWebExchangeMatcher.MatchResult.notMatch();
                 }).csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
-                .authorizeExchange(a->a.pathMatchers(HttpMethod.GET,"/actuator/health","/actuator/prometheus")
+                .authorizeExchange(a->a.pathMatchers(HttpMethod.GET,"/actuator/health","/actuator/health/**","/actuator/prometheus","/readyz","/livez")
                         .permitAll().anyExchange().denyAll()).build();
     }
     /** 匿名仅开放注册、登录、刷新、启动探测和GET活动；其他请求必须认证。 */
