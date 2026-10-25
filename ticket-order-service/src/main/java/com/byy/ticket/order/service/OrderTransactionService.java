@@ -57,7 +57,8 @@ public class OrderTransactionService {
         requestGate.lock(userId,request.idempotencyKey());
         var existing=orders.selectByRequest(userId,request.idempotencyKey());
         if(existing!=null){var item=items.selectByOrderId(existing.getId());
-            if(item==null||!request.ticketTierId().equals(item.getTicketTierId())||!request.quantity().equals(item.getQuantity()))throw new OrderConflictException("同一幂等键的购买参数不一致");
+            if(item==null||!request.ticketTierId().equals(item.getTicketTierId())||!request.quantity().equals(item.getQuantity())
+                ||!request.seatIds().equals(com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds())))throw new OrderConflictException("同一幂等键的购买参数不一致");
             return existing;
         }
         eventQuotas.ensure(userId,rule.eventId());
@@ -95,6 +96,7 @@ public class OrderTransactionService {
         item.setQuantity(request.quantity());
         item.setSubtotalAmount(amount);
         item.setRuleVersion(rule.ruleVersion());item.setPurchaseLimit(rule.purchaseLimit());item.setMaxSessions(rule.maxSessions());item.setMaxPerOrder(rule.maxPerOrder());
+        item.setSeatIds(com.byy.ticket.common.seat.SeatSelection.encode(request.seatIds()));
         PerformanceSpan.measure("sql.item.insert",()->items.insert(item));
         PerformanceSpan.measure("sql.quota.ensure",()->quotas.ensureExists(userId, rule.sessionId()));
         if (PerformanceSpan.measure("sql.quota.occupy",()->quotas.occupy(userId, rule.sessionId(), request.quantity(), rule.purchaseLimit())) != 1) {

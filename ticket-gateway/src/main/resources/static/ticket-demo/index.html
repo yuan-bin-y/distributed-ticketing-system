@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>间幕 · 现场票务</title>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./app.js" defer></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="./index.html" aria-label="间幕首页"
+        >间幕<span>JIÀN MÙ / LIVE</span></a
+      ><span class="edition">音乐 · 舞台 · 每一次在场</span
+      ><button id="account" class="outline">登录 / 注册</button>
+    </header>
+    <main>
+      <section class="intro">
+        <div>
+          <p class="eyebrow">YOUR NEXT LIVE MOMENT</p>
+          <h1>把下一场热爱，<br /><em>留在现场。</em></h1>
+          <p class="lede">选一场期待已久的演出，找到属于你的位置。</p>
+        </div>
+        <div class="intro-art" aria-hidden="true">
+          <span>ADMIT<br />ONE.</span><i></i><small>这一刻，值得在场。</small>
+        </div>
+      </section>
+      <section class="booking" aria-label="选场与购票">
+        <div class="show-panel">
+          <div class="section-title">
+            <span class="number">01</span>
+            <h2>先选一场喜欢的</h2>
+          </div>
+          <div class="selectors">
+            <label
+              >活动<select id="event">
+                <option value="">正在加载活动…</option>
+              </select></label
+            ><button class="text-button" id="more-events" hidden>
+              更多活动 ↓</button
+            ><label
+              >场次<select id="session" disabled>
+                <option>请先选择活动</option>
+              </select></label
+            ><button class="text-button" id="more-sessions" hidden>
+              更多场次 ↓</button
+            ><label
+              >票档<select id="tier" disabled>
+                <option>请先选择场次</option>
+              </select></label
+            ><button class="text-button" id="more-tiers" hidden>
+              更多票档 ↓
+            </button>
+          </div>
+          <div class="seat-heading">
+            <div>
+              <p class="eyebrow">FIND YOUR SEAT</p>
+              <h2 id="seat-title">你的位置，等你入座</h2>
+            </div>
+            <label class="region-label"
+              >区域<select id="region" disabled>
+                <option>—</option>
+              </select></label
+            >
+          </div>
+          <div class="stage">S T A G E / 舞 台</div>
+          <div
+            id="seat-view"
+            tabindex="0"
+            aria-label="座位图，滚动查看更多排和列"
+          >
+            <div id="seat-canvas"></div>
+            <p id="seat-empty">选择活动、场次和票档后查看座位</p>
+          </div>
+          <div class="seat-footer">
+            <span><i class="legend free"></i>可选</span
+            ><span><i class="legend chosen"></i>已选</span
+            ><span><i class="legend taken"></i>已占用</span
+            ><span class="hint" id="seat-hint">座位状态以提交时为准</span>
+          </div>
+        </div>
+        <aside class="cart">
+          <p class="eyebrow">YOUR TICKET</p>
+          <h2>下一场，见。</h2>
+          <p id="cart-show">尚未选择演出</p>
+          <div class="perforation"></div>
+          <p class="muted">已选座位</p>
+          <div id="selected-seats" class="seat-tags">
+            <span class="muted">从左侧座位图选择</span>
+          </div>
+          <label id="quantity-wrap" hidden
+            >购票数量<input
+              id="quantity"
+              type="number"
+              min="1"
+              max="100"
+              value="1"
+          /></label>
+          <div class="total">
+            <span>合计</span><strong id="total">¥ 0.00</strong>
+          </div>
+          <button id="purchase" class="primary" disabled>确认选票</button>
+          <p class="fine">
+            提交后会先确认座位与购买资格，<br />请在订单支付期限内完成付款。
+          </p>
+          <div id="progress" role="status" aria-live="polite" hidden></div>
+          <button id="pay" class="primary" hidden>模拟付款</button
+          ><button id="reset" class="outline" hidden>重新选票</button>
+          <div id="tickets"></div>
+        </aside>
+      </section>
+      <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    </main>
+    <footer>
+      <span>间幕 · 每一次在场</span><span>本地票务演示 / 付款为模拟流程</span>
+    </footer>
+    <dialog id="auth">
+      <form id="login-form">
+        <button
+          class="close"
+          type="button"
+          id="close-auth"
+          aria-label="关闭登录窗口"
+        >
+          ×
+        </button>
+        <p class="eyebrow">WELCOME TO JIÀN MÙ</p>
+        <h2>登录，留住你的现场。</h2>
+        <label
+          >账号<input
+            id="username"
+            autocomplete="username"
+            required
+            minlength="3"
+            maxlength="32"
+            pattern="[A-Za-z0-9_]{3,32}" /></label
+        ><label
+          >密码<input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+            required
+            minlength="8"
+            maxlength="64"
+        /></label>
+        <p id="auth-error" role="alert"></p>
+        <button class="primary" type="submit">登录</button
+        ><button id="register" type="button" class="text-button">
+          没有账号？注册并登录 →
+        </button>
+      </form>
+    </dialog>
+  </body>
+</html>

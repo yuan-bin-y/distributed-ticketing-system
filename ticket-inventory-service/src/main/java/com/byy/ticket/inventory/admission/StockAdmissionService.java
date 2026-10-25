@@ -23,6 +23,8 @@ public class StockAdmissionService {
     private final Clock clock;
     private final MeterRegistry metrics;
     private final boolean enabled;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.byy.ticket.inventory.seat.SeatInventoryService seats;
     public StockAdmissionService(TicketStockMapper stocks,AdmissionMapper admissions,RedisStockLedger ledger,
             PlatformTransactionManager manager,Clock clock,MeterRegistry metrics,
             @Value("${ticket.stock-admission.enabled:false}") boolean enabled) {
@@ -38,10 +40,10 @@ public class StockAdmissionService {
     public StockAdmission hold(ReserveStockDTO request) {
         if(!enabled)throw new InventoryConflictException("Redis 库存预扣未启用");
         validate(request);
-        var candidate=new StockAdmission(request.orderId(),request.ticketTierId(),request.sessionId(),request.quantity(),request.expiresAt(),"HELD");
+        var candidate=record(request,"HELD");
         String fingerprint=RedisStockLedger.fingerprint(candidate);
-        String claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint);
-        if("NOT_READY".equals(claim)){rebuild(candidate.ticketTierId());claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint);}
+        String claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint,request.seatIds());
+        if("NOT_READY".equals(claim)){rebuild(candidate.ticketTierId());claim=ledger.hold(candidate.ticketTierId(),candidate.orderNo(),candidate.quantity(),fingerprint,request.seatIds());}
         if("SOLD_OUT".equals(claim)){metrics.counter("ticket.inventory.prehold","outcome","sold_out").increment();throw new InventoryConflictException("可用库存不足");}
         if(claim==null||!claim.endsWith("|"+fingerprint))throw new InventoryConflictException("同一预扣编号的参数不一致或账本尚未准备好");
         String epoch=claim.substring(0,claim.indexOf('|'));
@@ -56,6 +58,7 @@ public class StockAdmissionService {
                 // Redis 异步复制切换可能丢失扣量；持久化准入总额也不能超过 MySQL 可用量。
                 long held=admissions.heldQuantity(candidate.ticketTierId());
                 if(held+candidate.quantity()>stock.getAvailableQuantity())throw new InventoryConflictException("可用库存不足，预扣账本需核对");
+                if(seats!=null)seats.holdWithinTransaction(request);
                 admissions.insert(candidate);
                 var saved=admissions.find(candidate.orderNo());requireSame(saved,candidate);
                 return saved;
@@ -72,27 +75,29 @@ public class StockAdmissionService {
     /** 在正式库存事务中调用；库存行必须已锁定，终态取消记录阻止迟到的正式预留。 */
     public void applyWithinTransaction(ReserveStockDTO request) {
         var old=admissions.find(request.orderId());
-        if(old==null){if(enabled)throw new InventoryConflictException("正式预留缺少持久化预扣");return;}
-        requireSame(old,new StockAdmission(request.orderId(),request.ticketTierId(),request.sessionId(),request.quantity(),request.expiresAt(),"HELD"));
+        if(old==null){var stock=stocks.selectById(request.ticketTierId());if(enabled||!request.seatIds().isEmpty()||(stock!=null&&Integer.valueOf(1).equals(stock.getSeatMode())))throw new InventoryConflictException("正式预留缺少持久化预扣");return;}
+        requireSame(old,record(request,"HELD"));
         if(!old.expiresAt().equals(request.expiresAt()))throw new InventoryConflictException("正式预留必须沿用首次预扣到期时间");
         if(!"HELD".equals(old.status())||!old.expiresAt().isAfter(LocalDateTime.now(clock)))throw new InventoryConflictException("预扣已取消或过期");
         admissions.state(old.orderNo(),"APPLIED");admissions.dirty(old.ticketTierId());
+        if(seats!=null)seats.applyWithinTransaction(request);
     }
 
     /** 在释放库存的同一本地事务保存终态，下一次重建自然把数量归还 Redis。 */
     public void releasedWithinTransaction(String orderNo,long tier) {
         if(admissions.find(orderNo)!=null){admissions.state(orderNo,"RELEASED");admissions.dirty(tier);}
     }
+    public void seatsFinishedWithinTransaction(String id,long tier,boolean sold){if(seats!=null)seats.finishWithinTransaction(id,tier,sold);}
 
     /** 先持久化取消墓碑再重建。取消与正式预留共用库存行锁，不能发生取消后迟到扣库存。 */
     public StockAdmission cancel(ReserveStockDTO request) {
         validate(request);
         var result=transaction.execute(status->{
             if(stocks.selectForUpdate(request.ticketTierId())==null)throw new InventoryConflictException("库存不存在");
-            var candidate=new StockAdmission(request.orderId(),request.ticketTierId(),request.sessionId(),request.quantity(),request.expiresAt(),"CANCELLED");
+            var candidate=record(request,"CANCELLED");
             admissions.insert(candidate);var old=admissions.find(request.orderId());requireSame(old,candidate);
             if("APPLIED".equals(old.status()))throw new InventoryConflictException("库存已正式预留，须通过正式释放接口处理");
-            if("HELD".equals(old.status()))admissions.state(old.orderNo(),"CANCELLED");
+            if("HELD".equals(old.status())){if(seats!=null)seats.cancelWithinTransaction(old.orderNo(),old.ticketTierId());admissions.state(old.orderNo(),"CANCELLED");}
             admissions.dirty(old.ticketTierId());return admissions.find(old.orderNo());
         });
         try{rebuild(request.ticketTierId());}catch(RuntimeException failure){log.warn("取消已落库，Redis 数量等待恢复，tier={}",request.ticketTierId());}
@@ -104,13 +109,14 @@ public class StockAdmissionService {
         transaction.executeWithoutResult(status->{
             var stock=stocks.selectForUpdate(tier);if(stock==null)throw new InventoryConflictException("库存不存在");
             var pending=admissions.pending(tier);
-            for(var item:pending)if(!item.expiresAt().isAfter(LocalDateTime.now(clock)))admissions.state(item.orderNo(),"CANCELLED");
+            for(var item:pending)if(!item.expiresAt().isAfter(LocalDateTime.now(clock))){if(seats!=null)seats.cancelWithinTransaction(item.orderNo(),tier);admissions.state(item.orderNo(),"CANCELLED");}
             pending=admissions.pending(tier);
             long held=pending.stream().mapToLong(StockAdmission::quantity).sum();
             if(held>stock.getAvailableQuantity())throw new IllegalStateException("待落实预扣超过可用库存，停止准入并核对");
             String epoch=UUID.randomUUID().toString().replace("-","");
             admissions.rebuilt(tier,epoch);
-            ledger.reset(tier,epoch,(int)(stock.getAvailableQuantity()-held),pending);
+            var dedup=new ArrayList<>(pending);dedup.addAll(admissions.applied(tier));
+            ledger.reset(tier,epoch,(int)(stock.getAvailableQuantity()-held),dedup,Integer.valueOf(1).equals(stock.getSeatMode()),seats==null?List.of():seats.available(tier));
             // 若 SQL 提交失败，Redis 代次也不能被接受：hold 的落库检查会检测不匹配并重新核对。
             metrics.counter("ticket.inventory.prehold.rebuild").increment();
         });
@@ -123,6 +129,7 @@ public class StockAdmissionService {
         if(left==null||!left.ticketTierId().equals(right.ticketTierId())||!RedisStockLedger.fingerprint(left).equals(RedisStockLedger.fingerprint(right)))
             throw new InventoryConflictException("同一预扣编号必须使用原场次、票档、数量和到期时间");
     }
+    private StockAdmission record(ReserveStockDTO request,String status){return new StockAdmission(request.orderId(),request.ticketTierId(),request.sessionId(),request.quantity(),request.expiresAt(),status,com.byy.ticket.common.seat.SeatSelection.fingerprint(request.seatIds()));}
     private void validate(ReserveStockDTO request) {
         if(request==null||request.orderId()==null||!request.orderId().matches("[A-Za-z0-9_-]{1,64}")||request.ticketTierId()==null||request.ticketTierId()<1
             ||request.sessionId()==null||request.sessionId()<1||request.quantity()==null||request.quantity()<1||request.expiresAt()==null

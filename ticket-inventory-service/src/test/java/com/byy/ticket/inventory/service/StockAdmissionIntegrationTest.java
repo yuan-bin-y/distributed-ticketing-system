@@ -32,11 +32,12 @@ class StockAdmissionIntegrationTest {
     static final String PREFIX="ticket:test:prehold:"+UUID.randomUUID()+":";
     @Configuration @EnableTransactionManagement
     @MapperScan({"com.byy.ticket.inventory.mapper","com.byy.ticket.inventory.admission"})
-    @Import(InventoryServiceImpl.class)
+    @Import({InventoryServiceImpl.class,com.byy.ticket.inventory.seat.SeatInventoryService.class})
     static class Config {
         @Bean DataSource dataSource(){return db.dataSource;}
         @Bean SqlSessionFactory factory()throws Exception{return db.factory();}
         @Bean PlatformTransactionManager transactions(){return new DataSourceTransactionManager(db.dataSource);}
+        @Bean JdbcTemplate jdbc(){return new JdbcTemplate(db.dataSource);}
         @Bean Clock clock(){return Clock.system(ZoneOffset.ofHours(8));}
         @Bean HotStockGate gate(){return new HotStockGate(mock(StringRedisTemplate.class),new SimpleMeterRegistry(),false,"test:",2,15000);}
         @Bean StockAdmissionService admissions(com.byy.ticket.inventory.mapper.TicketStockMapper stocks,AdmissionMapper mapper,PlatformTransactionManager manager,Clock clock){
@@ -49,7 +50,7 @@ class StockAdmissionIntegrationTest {
         admission=context.getBean(StockAdmissionService.class);inventory=context.getBean(InventoryService.class);sql=new JdbcTemplate(db.dataSource);
     }
     @AfterAll static void stop()throws Exception {
-        if(redis!=null)for(long tier=101;tier<=110;tier++)redis.delete(List.of(PREFIX+"{"+tier+"}:meta",PREFIX+"{"+tier+"}:holds"));
+        if(redis!=null)for(long tier=101;tier<=120;tier++)redis.delete(List.of(PREFIX+"{"+tier+"}:meta",PREFIX+"{"+tier+"}:holds",PREFIX+"{"+tier+"}:seats"));
         if(context!=null)context.close();if(connection!=null)connection.destroy();if(db!=null)db.close();
     }
     void stock(long tier,int count){sql.update("INSERT INTO t_ticket_stock(ticket_tier_id,session_id,total_quantity,available_quantity) VALUES(?,1,?,?)",tier,count,count);admission.rebuild(tier);}
@@ -69,6 +70,7 @@ class StockAdmissionIntegrationTest {
         stock(102,3);var request=request(102,"duplicate");admission.hold(request);admission.hold(request);assertEquals(2,available(102));
         var first=inventory.reserve(request);assertEquals(first.reservationId(),inventory.reserve(request).reservationId());
         admission.rebuild(102);assertEquals(2,available(102));
+        assertEquals("APPLIED",admission.hold(request).status());assertEquals(2,available(102));
         inventory.release(first.reservationId());inventory.release(first.reservationId());admission.rebuild(102);assertEquals(3,available(102));
     }
     @Test void cancelledBeforeReserveCannotBeReopened(){
@@ -102,5 +104,48 @@ class StockAdmissionIntegrationTest {
         assertEquals(saved.expiresAt(),admission.hold(later).expiresAt());
         assertThrows(RuntimeException.class,()->inventory.reserve(later));
         assertEquals("RESERVED",inventory.reserve(first).status());
+    }
+    void seatStock(long tier){stock(tier,4);var regions=List.of(new com.byy.ticket.common.seat.SeatGrid.Region("A",2,2));context.getBean(com.byy.ticket.inventory.seat.SeatInventoryService.class).initialize(tier,new com.byy.ticket.inventory.seat.SeatInventoryService.Layout(tier,1,com.byy.ticket.common.seat.SeatGrid.hash(regions),regions));admission.rebuild(tier);}
+    ReserveStockDTO selected(long tier,String id,String... seats){var base=request(tier,id);return new ReserveStockDTO(base.orderId(),1L,tier,seats.length,base.expiresAt(),List.of(seats));}
+    @Test void twoUsersCannotHoldSameSeatEvenWithEnoughTotalQuantity()throws Exception{
+        seatStock(111);var pool=Executors.newFixedThreadPool(2);var start=new CountDownLatch(1);
+        try{var left=pool.submit(()->{start.await();try{admission.hold(selected(111,"seat_left","A:1:1"));return true;}catch(RuntimeException rejected){return false;}});
+            var right=pool.submit(()->{start.await();try{admission.hold(selected(111,"seat_right","A:1:1"));return true;}catch(RuntimeException rejected){return false;}});
+            start.countDown();assertNotEquals(left.get(15,TimeUnit.SECONDS),right.get(15,TimeUnit.SECONDS));
+            assertEquals(1,sql.queryForObject("SELECT COUNT(*) FROM t_session_seat WHERE ticket_tier_id=111 AND status='HELD'",Integer.class));
+        }finally{pool.shutdownNow();}
+    }
+    @Test void partialSelectionConflictRollsBackEverySeatAndQuantity(){
+        seatStock(112);admission.hold(selected(112,"seat_owner","A:1:1"));
+        assertThrows(RuntimeException.class,()->admission.hold(selected(112,"seat_conflict","A:1:1","A:1:2")));
+        assertEquals("AVAILABLE",sql.queryForObject("SELECT status FROM t_session_seat WHERE ticket_tier_id=112 AND seat_id='A:1:2'",String.class));assertEquals(3,available(112));
+    }
+    @Test void selectedSeatsAreReleasedOrSoldWithCountsAndCannotBeReassignedAfterSale(){
+        seatStock(113);var request=selected(113,"seat_sale","A:1:2","A:1:1");admission.hold(request);admission.hold(new ReserveStockDTO(request.orderId(),1L,113L,2,request.expiresAt(),List.of("A:1:1","A:1:2")));
+        var reservation=inventory.reserve(request);inventory.confirm(reservation.reservationId());inventory.confirm(reservation.reservationId());admission.rebuild(113);
+        assertEquals(2,sql.queryForObject("SELECT sold_quantity FROM t_ticket_stock WHERE ticket_tier_id=113",Integer.class));
+        assertEquals(2,sql.queryForObject("SELECT COUNT(*) FROM t_session_seat WHERE ticket_tier_id=113 AND status='SOLD'",Integer.class));
+        assertThrows(RuntimeException.class,()->admission.hold(selected(113,"seat_resell","A:1:1")));assertEquals(2,available(113));
+    }
+    @Test void cancelAndExpiryReleaseSeatsAndRedisLossKeepsHeldSeatsUnavailable(){
+        seatStock(114);var request=selected(114,"seat_expire","A:1:1");admission.hold(request);admission.rebuild(114);
+        assertThrows(RuntimeException.class,()->admission.hold(selected(114,"seat_other","A:1:1")));
+        sql.update("UPDATE t_stock_admission SET expires_at=TIMESTAMPADD(SECOND,-1,CURRENT_TIMESTAMP(3)) WHERE order_no='seat_expire'");admission.rebuild(114);assertEquals(4,available(114));
+        var second=selected(114,"seat_cancel","A:1:1");admission.hold(second);admission.cancel(second);admission.cancel(second);assertEquals(4,available(114));
+        assertEquals(4,sql.queryForObject("SELECT COUNT(*) FROM t_session_seat WHERE ticket_tier_id=114 AND status='AVAILABLE'",Integer.class));
+    }
+    @Test void seatChangesPageSameVersionWithoutDroppingRows(){
+        seatStock(115);var seats=context.getBean(com.byy.ticket.inventory.seat.SeatInventoryService.class);
+        var first=seats.changes(115,"A",1,2,0,0,0,1);assertTrue(first.hasMore());
+        var second=seats.changes(115,"A",1,2,0,first.version(),first.nextAfter(),10);assertEquals(3,second.records().size());assertFalse(second.hasMore());
+        var request=selected(115,"seat_delta","A:1:1","A:1:2");admission.hold(request);
+        var delta=seats.changes(115,"A",1,2,first.version(),0,0,10);assertEquals(2,delta.records().size());assertTrue(delta.records().stream().allMatch(v->v.status().equals("HELD")));
+        admission.cancel(request);var released=seats.changes(115,"A",1,2,delta.version(),0,0,10);assertEquals(2,released.records().size());assertTrue(released.records().stream().allMatch(v->v.status().equals("AVAILABLE")));
+    }
+    @Test void existingReservationFromBeforeUpgradeDoesNotRequireAnotherPrehold(){
+        stock(116,1);var request=request(116,"legacy_committed");String id="1".repeat(32);
+        sql.update("INSERT INTO t_stock_reservation(reservation_id,order_id,session_id,ticket_tier_id,quantity,expires_at,status) VALUES(?,?,1,116,1,?,'RESERVED')",id,request.orderId(),request.expiresAt());
+        sql.update("UPDATE t_ticket_stock SET available_quantity=0,reserved_quantity=1 WHERE ticket_tier_id=116");admission.rebuild(116);
+        assertEquals(id,inventory.reserve(request).reservationId());assertEquals(0,sql.queryForObject("SELECT COUNT(*) FROM t_stock_admission WHERE ticket_tier_id=116",Integer.class));
     }
 }

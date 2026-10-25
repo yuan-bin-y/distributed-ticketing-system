@@ -59,6 +59,17 @@ public class InventoryInitializationClient {
                 });
     }
     public record StockFact(Long ticketTierId,Long sessionId,Integer totalQuantity,Integer availableQuantity,Integer reservedQuantity,Integer soldQuantity){}
+    /** 选座库存与静态布局使用同一摘要；初始化响应丢失时用原摘要重试。 */
+    public void initializeSeats(com.byy.ticket.event.seat.SeatLayoutService.Layout layout){
+        protection.execute(()->client.post().uri("/internal/stocks/initializations/{tier}/seats",layout.ticketTierId())
+            .body(layout).exchange((sent,received)->{
+                if(received.getStatusCode().is4xxClientError())throw new InitializationRejected("座位初始化被拒绝，HTTP "+received.getStatusCode().value());
+                if(!received.getStatusCode().is2xxSuccessful())throw new IllegalStateException("座位初始化结果未知");
+                var response=received.bodyTo(new ParameterizedTypeReference<Result<com.byy.ticket.event.seat.SeatLayoutService.Layout>>(){});
+                if(response==null||!"OK".equals(response.code())||response.data()==null||!layout.equals(response.data()))throw new InitializationRejected("座位初始化事实与布局不一致",true);
+                return response.data();
+            }));
+    }
     /** 参数或事实矛盾暂停自动尝试，管理员核对后可用原参数重新准备。 */
     public static class InitializationRejected extends RuntimeException {
         private final boolean healthFailure;

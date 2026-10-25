@@ -46,7 +46,7 @@ public class InitializationSecurityConfig {
                     }
                 },BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
-                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stocks/initializations").hasRole("EVENT_SERVICE")
+                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stocks/initializations","/internal/stocks/initializations/{tierId}/seats").hasRole("EVENT_SERVICE")
                         .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stocks/initializations/{ticketTierId}").hasRole("EVENT_SERVICE")
                         .anyRequest().denyAll())
                 .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
@@ -59,7 +59,7 @@ public class InitializationSecurityConfig {
                 .addFilterBefore(new ServiceCredentialFilter(OrderInventoryCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-admissions","/internal/stock-admissions/cancel","/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stock-reservations/{reservationId}","/internal/stocks/{ticketTierId}").hasRole("ORDER_SERVICE")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stock-reservations/{reservationId}","/internal/stocks/{ticketTierId}","/internal/stocks/{tierId}/seats").hasRole("ORDER_SERVICE")
                         .anyRequest().denyAll())
                 .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
                         .accessDeniedHandler((request,response,error)->write(response,json,403))).build();

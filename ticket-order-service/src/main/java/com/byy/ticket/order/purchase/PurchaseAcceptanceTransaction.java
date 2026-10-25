@@ -17,11 +17,20 @@ import tools.jackson.databind.ObjectMapper;
 public class PurchaseAcceptanceTransaction {
     private final PurchaseAcceptanceMapper acceptances;private final PurchaseOutboxMapper outbox;
     private final PurchaseRequestGateMapper gate;private final OrderTransactionService orders;private final ObjectMapper json;
+    @org.springframework.beans.factory.annotation.Autowired private OrderMapper orderMapper;
+    @org.springframework.beans.factory.annotation.Autowired private OrderItemMapper items;
     public PurchaseAcceptanceTransaction(PurchaseAcceptanceMapper acceptances,PurchaseOutboxMapper outbox,PurchaseRequestGateMapper gate,OrderTransactionService orders,ObjectMapper json){this.acceptances=acceptances;this.outbox=outbox;this.gate=gate;this.orders=orders;this.json=json;}
     @Transactional public PurchaseAcceptance accept(PurchaseAcceptance candidate){
         gate.lock(candidate.getUserId(),candidate.getIdempotencyKey());var old=acceptances.byKey(candidate.getUserId(),candidate.getIdempotencyKey());
         if(old!=null){same(old,candidate);return old;}
-        acceptances.insert(candidate);outbox.insert(UUID.randomUUID().toString().replace("-",""),candidate.getRequestId());return candidate;
+        var existing=orderMapper.selectByRequest(candidate.getUserId(),candidate.getIdempotencyKey());
+        if(existing!=null){
+            var item=items.selectByOrderId(existing.getId());var request=json.readValue(candidate.getRequestJson(),OrderCreateDTO.class);
+            if(item==null||!request.ticketTierId().equals(item.getTicketTierId())||!request.quantity().equals(item.getQuantity())
+                ||!request.seatIds().equals(com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds())))throw new OrderConflictException("原同步订单与本次异步参数不一致");
+            candidate.setStatus("CREATED");candidate.setExpiresAt(existing.getExpiresAt());
+        }
+        acceptances.insert(candidate);if("ACCEPTED".equals(candidate.getStatus()))outbox.insert(UUID.randomUUID().toString().replace("-",""),candidate.getRequestId());return candidate;
     }
     /** 先锁幂等入口再锁受理，保持同步、异步、恢复线程一致的加锁顺序。 */
     @Transactional public boolean create(String id,String token,LocalDateTime now){

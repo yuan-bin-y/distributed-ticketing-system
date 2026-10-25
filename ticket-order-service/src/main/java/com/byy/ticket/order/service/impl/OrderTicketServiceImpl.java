@@ -33,7 +33,7 @@ public class OrderTicketServiceImpl implements OrderTicketService {
         if(item==null) { throw new IllegalStateException("订单购买快照缺失"); }
         var result=tickets.selectByItem(item.getId()).stream().map(ticket->new ElectronicTicketVO(
                 ticket.getTicketNo(),ticket.getTicketIndex(),ticket.getStatus(),item.getEventId(),
-                item.getSessionId(),item.getTicketTierId(),item.getTicketTierName(),ticket.getCreatedAt())).toList();
+                item.getSessionId(),item.getTicketTierId(),item.getTicketTierName(),ticket.getCreatedAt(),ticket.getSeatId())).toList();
         return new OrderTicketsVO(orderNo,order.getStatus(),result);
     }
 }

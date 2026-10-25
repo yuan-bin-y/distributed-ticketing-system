@@ -37,7 +37,7 @@ class OrderTransactionIntegrationTest {
     static MysqlFixture db;static AnnotationConfigApplicationContext context;static JdbcTemplate sql;
     static final AtomicLong ids=new AtomicLong(1);
     @Configuration @EnableTransactionManagement @MapperScan("com.byy.ticket.order.mapper")
-    @Import({OrderTransactionService.class,OrderPaymentReceiptTransaction.class,PaymentMessageTransaction.class})
+    @Import({OrderTransactionService.class,OrderPaymentReceiptTransaction.class,PaymentMessageTransaction.class,OrderTicketIssueTransaction.class})
     static class Config {
         @Bean com.byy.ticket.order.rules.PurchaseRuleEngine rules(){return new com.byy.ticket.order.rules.PurchaseRuleEngine();}
         @Bean DataSource dataSource(){return db.dataSource;}
@@ -167,5 +167,16 @@ class OrderTransactionIntegrationTest {
         assertEquals(2L,sql.queryForObject("SELECT rule_version FROM t_order_item WHERE order_id=?",Long.class,order.getId()));
         assertThrows(RuntimeException.class,()->limited(905,906,4,"too_many",2));
         assertEquals(1,sql.queryForObject("SELECT occupied_sessions FROM t_user_event_quota WHERE user_id=905 AND event_id=900",Integer.class));
+    }
+    @Test void selectedSeatSnapshotIssuesExactlyOneTicketForEachSeat(){
+        var now=LocalDateTime.now(ZoneOffset.ofHours(8)).truncatedTo(ChronoUnit.MILLIS);
+        var rule=new TicketPurchaseRuleResponse(907L,907L,907L,"seats",BigDecimal.ONE,now.minusHours(1),now.plusHours(1),5);
+        var request=new OrderCreateDTO(907L,2,"selected",java.util.List.of("A:1:2","A:1:1"));
+        var order=context.getBean(OrderTransactionService.class).createAccepted(PurchaseRequestId.of(907,"selected"),907L,request,rule,BigDecimal.valueOf(2),now,now.plusMinutes(10));
+        sql.update("UPDATE t_order SET status='PAID',payment_no=?,paid_at=?,reservation_id=?,lease_token='issue' WHERE id=?","b".repeat(32),now,"c".repeat(32),order.getId());
+        var issue=context.getBean(OrderTicketIssueTransaction.class);issue.issue(order.getId(),"issue");issue.issue(order.getId(),"issue");
+        assertEquals(java.util.List.of("A:1:1","A:1:2"),sql.queryForList("SELECT seat_id FROM t_ticket WHERE order_item_id=(SELECT id FROM t_order_item WHERE order_id=?) ORDER BY ticket_index",String.class,order.getId()));
+        assertEquals("COMPLETED",context.getBean(OrderMapper.class).selectById(order.getId()).getStatus());
+        assertThrows(com.byy.ticket.order.exception.OrderConflictException.class,()->context.getBean(OrderTransactionService.class).createAccepted(order.getOrderNo(),907L,new OrderCreateDTO(907L,2,"selected",java.util.List.of("A:1:1","A:1:3")),rule,BigDecimal.valueOf(2),now,now.plusMinutes(10)));
     }
 }

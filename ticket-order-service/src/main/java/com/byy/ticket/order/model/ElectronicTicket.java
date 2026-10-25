@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 @Data
 @TableName("t_ticket")
 public class ElectronicTicket {
+    private String seatId;
     /** 订单库内的主键。 */
     @TableId(type=IdType.AUTO)
     private Long id;

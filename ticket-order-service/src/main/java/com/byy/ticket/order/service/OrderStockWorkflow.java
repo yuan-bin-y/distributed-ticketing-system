@@ -37,6 +37,8 @@ public class OrderStockWorkflow {
     private final OrderTicketIssueTransaction ticketIssue;
     private final OrderTransactionService transactions;
     private final TraceSupport traces;
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private com.byy.ticket.order.client.StockAdmissionClient admissions;
 
     /** 注入订单持久化、库存客户端、付款履约步骤、出票事务、配置和业务时钟。 */
     public OrderStockWorkflow(OrderMapper orders, OrderItemMapper items, InventoryClient inventory,
@@ -111,7 +113,7 @@ public class OrderStockWorkflow {
             return;
         }
         StockReservationResponse result = PerformanceSpan.measure("inventory.http",()->inventory.reserve(new StockReservationRequest(order.getOrderNo(),
-                item.getSessionId(), item.getTicketTierId(), item.getQuantity(), order.getExpiresAt())));
+                item.getSessionId(), item.getTicketTierId(), item.getQuantity(), order.getExpiresAt(),com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()))));
         order.setReservationId(result.reservationId());
         if ("RELEASED".equals(result.status())) {
             complete(order, token, OrderStatus.CLOSED, result.reservationId(), null);
@@ -151,6 +153,20 @@ public class OrderStockWorkflow {
      */
     private void rejectOrRetry(TicketOrder order, String token, RuntimeException exception) {
         if (OrderStatus.STOCK_PENDING.name().equals(order.getStatus())) {
+            if(admissions!=null&&admissions.enabled()){
+                var item=items.selectByOrderId(order.getId());
+                if(item!=null){
+                    // 先取得持久化取消事实，再结束失败订单；取消与迟到reserve在库存端串行。
+                    try{
+                        var cancelled=admissions.cancel(new StockReservationRequest(order.getOrderNo(),item.getSessionId(),item.getTicketTierId(),item.getQuantity(),order.getExpiresAt(),com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds())));
+                        if("CANCELLED".equals(cancelled.status())||"RELEASED".equals(cancelled.status())){complete(order,token,OrderStatus.CREATE_FAILED,order.getReservationId(),summary(exception));return;}
+                    }catch(InventoryServiceCallException uncertain){
+                        if(uncertain.getReason()==InventoryServiceCallException.Reason.CONFLICT&&!order.getExpiresAt().isAfter(now()))complete(order,token,OrderStatus.REVIEW_REQUIRED,order.getReservationId(),summary(uncertain));
+                        else retry(order,token,uncertain);
+                        return;
+                    }
+                }
+            }
             if (order.getAttemptCount() == 1
                     || (!order.getExpiresAt().isAfter(now()) && exception instanceof IllegalArgumentException)) {
                 complete(order, token, OrderStatus.CREATE_FAILED, order.getReservationId(), summary(exception));

@@ -38,6 +38,9 @@ public class TicketStock {
      * 已经确认售出的数量。
      */
     private Integer soldQuantity;
+    private Integer seatMode;
+    private String layoutHash;
+    private Long seatVersion;
     /**
      * 记录创建时间，由数据库默认值写入。
      */

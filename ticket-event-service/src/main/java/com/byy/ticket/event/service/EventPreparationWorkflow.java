@@ -11,6 +11,8 @@ public class EventPreparationWorkflow {
     private static final Logger log=LoggerFactory.getLogger(EventPreparationWorkflow.class);
     private final PreparationMapper preparation;private final TicketTierMapper tiers;private final InventoryInitializationClient inventory;
     private final TraceSupport traces;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.byy.ticket.event.seat.SeatLayoutService layouts;
     public EventPreparationWorkflow(PreparationMapper preparation,TicketTierMapper tiers,InventoryInitializationClient inventory,TraceSupport traces){this.preparation=preparation;this.tiers=tiers;this.inventory=inventory;this.traces=traces;}
     /** 单条失败不阻断其余任务，每次恢复保留独立traceId。 */
     public void recoverDue(){for(Long id:preparation.selectDue()){
@@ -29,6 +31,7 @@ public class EventPreparationWorkflow {
         try(var scope=traces.resume(parent,"event.stock initialize",null)){
         try{
             inventory.initialize(id,tier.getSessionId(),tier.getPlannedQuantity());
+            var layout=layouts.preparation(id);if(layout!=null)inventory.initializeSeats(layout);
             preparation.finish(id,token,"READY",null,0);
         }catch(InventoryInitializationClient.InitializationRejected rejected){
             scope.error(rejected);

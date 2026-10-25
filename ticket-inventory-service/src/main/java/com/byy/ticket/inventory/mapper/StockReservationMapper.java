@@ -13,14 +13,17 @@ import org.apache.ibatis.annotations.Update;
  */
 @Mapper
 public interface StockReservationMapper extends BaseMapper<StockReservation> {
+    /** 升级前已有的预留先走原幂等核对，不能因Redis预扣账本为空被误判无票。 */
+    @Select("SELECT * FROM t_stock_reservation WHERE order_id=#{orderId}")
+    StockReservation selectByOrderId(String orderId);
     /**
      * 插入预留记录；唯一键冲突时保留原记录，不覆盖首次请求的参数。
      * 不能只凭影响行数判断是否为新预留，Service 会比较实际记录与候选记录的预留编号。
      */
     @Insert("""
             INSERT INTO t_stock_reservation
-                (reservation_id, order_id, session_id, ticket_tier_id, quantity, expires_at, status)
-            VALUES (#{reservationId}, #{orderId}, #{sessionId}, #{ticketTierId}, #{quantity}, #{expiresAt}, #{status})
+                (reservation_id, order_id, session_id, ticket_tier_id, quantity, expires_at, status,seat_fingerprint)
+            VALUES (#{reservationId}, #{orderId}, #{sessionId}, #{ticketTierId}, #{quantity}, #{expiresAt}, #{status},#{seatFingerprint})
             ON DUPLICATE KEY UPDATE order_id = t_stock_reservation.order_id
             """)
     int insertOrKeep(StockReservation reservation);

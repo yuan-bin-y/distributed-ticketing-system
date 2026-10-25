@@ -19,9 +19,9 @@ public interface ElectronicTicketMapper extends BaseMapper<ElectronicTicket> {
     /** 分批写入缺少的票；任何唯一键或数据库错误向上抛出，整次出票回滚。 */
     @Insert("""
             <script>
-            INSERT INTO t_ticket(ticket_no,order_item_id,ticket_index,status) VALUES
+            INSERT INTO t_ticket(ticket_no,order_item_id,ticket_index,status,seat_id) VALUES
             <foreach collection="tickets" item="ticket" separator=",">
-            (#{ticket.ticketNo},#{ticket.orderItemId},#{ticket.ticketIndex},'VALID')
+            (#{ticket.ticketNo},#{ticket.orderItemId},#{ticket.ticketIndex},'VALID',#{ticket.seatId})
             </foreach>
             </script>
             """)

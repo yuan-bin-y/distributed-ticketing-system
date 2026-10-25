@@ -32,7 +32,7 @@ public class PurchaseMq {
         @org.springframework.beans.factory.annotation.Autowired(required=false) private com.byy.ticket.observability.TraceSupport traces;
         @org.springframework.beans.factory.annotation.Autowired(required=false) private PurchaseAcceptanceMapper acceptances;
         public Relay(PurchaseOutboxMapper outbox,RabbitTemplate rabbit,ObjectMapper json,@Value("${ticket.mq.prefix:ticket}") String prefix,MeterRegistry metrics){this.outbox=outbox;this.rabbit=rabbit;this.json=json;this.exchange=prefix+".purchase.exchange";this.metrics=metrics;}
-        @Scheduled(fixedDelayString="${ticket.purchase.outbox-ms:1000}") public void publishDue(){for(String id:outbox.due())publish(id);}
+        @Scheduled(scheduler="purchaseRelayScheduler",fixedDelayString="${ticket.purchase.outbox-ms:1000}") public void publishDue(){for(String id:outbox.due())publish(id);}
         public void publish(String id){String token=UUID.randomUUID().toString().replace("-","");if(outbox.claim(id,token)!=1)return;var event=outbox.get(id);
             var accepted=acceptances==null?null:acceptances.selectById(event.requestId());
             var scope=traces==null?null:traces.resume(new com.byy.ticket.observability.TraceSupport.Snapshot(accepted==null?null:accepted.getTraceParent(),accepted==null?null:accepted.getTraceState()),"order.purchase publish",io.micrometer.tracing.Span.Kind.PRODUCER);

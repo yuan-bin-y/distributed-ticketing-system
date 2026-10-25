@@ -14,5 +14,7 @@ import jakarta.validation.constraints.Pattern;
 public record OrderCreateDTO(
         @NotNull @Min(1) Long ticketTierId,
         @NotNull @Min(1) Integer quantity,
-        @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{1,64}") String idempotencyKey) {
+        @NotBlank @Pattern(regexp = "[A-Za-z0-9_-]{1,64}") String idempotencyKey,java.util.List<String> seatIds) {
+    public OrderCreateDTO{seatIds=com.byy.ticket.common.seat.SeatSelection.normalize(seatIds,quantity);}
+    public OrderCreateDTO(Long ticketTierId,Integer quantity,String key){this(ticketTierId,quantity,key,java.util.List.of());}
 }

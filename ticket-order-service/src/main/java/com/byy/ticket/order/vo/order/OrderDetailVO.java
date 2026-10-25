@@ -21,5 +21,5 @@ import java.time.LocalDateTime;
 public record OrderDetailVO(String orderNo, String status, Long eventId, Long sessionId,
                             Long ticketTierId, String ticketTierName, BigDecimal unitPrice,
                             Integer quantity, BigDecimal totalAmount, LocalDateTime expiresAt,
-                            String reservationId, LocalDateTime createdAt) {
+                            String reservationId, LocalDateTime createdAt,java.util.List<String> seatIds,Long ruleVersion) {
 }

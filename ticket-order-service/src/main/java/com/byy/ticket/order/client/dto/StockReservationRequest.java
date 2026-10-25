@@ -13,5 +13,7 @@ import java.time.LocalDateTime;
  * @param expiresAt 预留到期时间，按 UTC+8 本地时间传递且精度不超过毫秒；当前尚无自动过期释放任务。
  */
 public record StockReservationRequest(String orderId, Long sessionId, Long ticketTierId,
-                                      Integer quantity, LocalDateTime expiresAt) {
+                                      Integer quantity, LocalDateTime expiresAt,java.util.List<String> seatIds) {
+    public StockReservationRequest{seatIds=com.byy.ticket.common.seat.SeatSelection.normalize(seatIds,quantity);}
+    public StockReservationRequest(String order,Long session,Long tier,Integer quantity,LocalDateTime expires){this(order,session,tier,quantity,expires,java.util.List.of());}
 }

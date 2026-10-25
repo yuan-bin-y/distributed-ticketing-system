@@ -14,13 +14,17 @@ public final class MysqlFixture implements AutoCloseable {
     public final DataSource dataSource;
     private final String schema,base,user,password;
     public MysqlFixture() throws Exception {
+        this(null);
+    }
+    /** 升级回归可以先迁移到旧版本，插入历史事实，再执行后续迁移。 */
+    public MysqlFixture(String target) throws Exception {
         schema="ticket_test_"+UUID.randomUUID().toString().replace("-","");
         base=System.getenv().getOrDefault("TICKET_TEST_MYSQL_BASE","jdbc:mysql://127.0.0.1:3306/");
         if(!base.matches("jdbc:mysql://[^/?]+/"))throw new IllegalArgumentException("测试地址必须为不含库名的MySQL JDBC地址");
         user=required("LOCAL_MYSQL_USERNAME");password=required("LOCAL_MYSQL_PASSWORD");
         try(var db=DriverManager.getConnection(base,user,password);var sql=db.createStatement()) {sql.execute("CREATE DATABASE "+schema);}
         dataSource=new DriverManagerDataSource(base+schema+"?connectionTimeZone=%2B08:00&forceConnectionTimeZoneToSession=true",user,password);
-        try {Flyway.configure().dataSource(dataSource).locations("classpath:db/migration").load().migrate();}
+        try {var configuration=Flyway.configure().dataSource(dataSource).locations("classpath:db/migration");if(target!=null)configuration.target(target);configuration.load().migrate();}
         catch(Exception failure){close();throw failure;}
     }
     public SqlSessionFactory factory() throws Exception {

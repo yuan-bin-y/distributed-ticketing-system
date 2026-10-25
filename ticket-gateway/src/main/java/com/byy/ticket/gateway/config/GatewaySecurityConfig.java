@@ -39,7 +39,7 @@ public class GatewaySecurityConfig {
                 .authorizeExchange(auth -> auth.pathMatchers("/internal/**").denyAll()
                         .pathMatchers("/api/admin/**").hasRole("ADMIN")
                         .pathMatchers(HttpMethod.POST,"/api/auth/register","/api/auth/login","/api/auth/refresh").permitAll()
-                        .pathMatchers(HttpMethod.GET,"/api/events/**","/api/auth/ping").permitAll()
+                        .pathMatchers(HttpMethod.GET,"/api/events/**","/api/auth/ping","/ticket-demo/**").permitAll()
                         .anyExchange().authenticated())
                 .exceptionHandling(errors -> errors
                         .authenticationEntryPoint((exchange, exception) -> responses.write(exchange,HttpStatus.UNAUTHORIZED,"UNAUTHORIZED","请登录或更新登录凭证"))

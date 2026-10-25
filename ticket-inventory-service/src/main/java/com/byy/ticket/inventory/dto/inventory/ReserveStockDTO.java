@@ -22,5 +22,7 @@ public record ReserveStockDTO(
         @NotNull(message = "场次ID不能为空") @Min(value = 1, message = "场次ID必须大于零") Long sessionId,
         @NotNull(message = "票档ID不能为空") @Min(value = 1, message = "票档ID必须大于零") Long ticketTierId,
         @NotNull(message = "数量不能为空") @Min(value = 1, message = "数量必须大于零") Integer quantity,
-        @NotNull(message = "到期时间不能为空") LocalDateTime expiresAt) {
+        @NotNull(message = "到期时间不能为空") LocalDateTime expiresAt,java.util.List<String> seatIds) {
+    public ReserveStockDTO{seatIds=com.byy.ticket.common.seat.SeatSelection.normalize(seatIds,quantity);}
+    public ReserveStockDTO(String orderId,Long sessionId,Long ticketTierId,Integer quantity,LocalDateTime expiresAt){this(orderId,sessionId,ticketTierId,quantity,expiresAt,java.util.List.of());}
 }

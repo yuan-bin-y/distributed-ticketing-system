@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 @Data
 @TableName("t_stock_reservation")
 public class StockReservation {
+    private String seatFingerprint;
     /**
      * 库存服务生成的 32 位预留编号。
      */

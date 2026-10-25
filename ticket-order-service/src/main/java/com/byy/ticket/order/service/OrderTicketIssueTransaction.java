@@ -31,9 +31,12 @@ public class OrderTicketIssueTransaction {
         }
         var existing=tickets.selectByItemForUpdate(item.getId());
         Set<Integer> indices=new HashSet<>();
+        var selected=com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds());
+        if(!selected.isEmpty()&&selected.size()!=item.getQuantity())throw new IllegalStateException("选座快照数量不一致");
         for(var ticket:existing) {
             if(ticket.getTicketIndex()<1 || ticket.getTicketIndex()>item.getQuantity()
-                    || !"VALID".equals(ticket.getStatus()) || !indices.add(ticket.getTicketIndex())) {
+                    || !"VALID".equals(ticket.getStatus()) || !indices.add(ticket.getTicketIndex())
+                    ||!Objects.equals(ticket.getSeatId(),selected.isEmpty()?null:selected.get(ticket.getTicketIndex()-1))) {
                 throw new IllegalArgumentException("已保存电子票与购买数量不一致，需核对");
             }
         }
@@ -44,6 +47,7 @@ public class OrderTicketIssueTransaction {
             var ticket=new ElectronicTicket();
             ticket.setTicketNo(UUID.randomUUID().toString().replace("-",""));
             ticket.setOrderItemId(item.getId());ticket.setTicketIndex(index);ticket.setStatus("VALID");
+            ticket.setSeatId(selected.isEmpty()?null:selected.get(offset));
             batch.add(ticket);
             if(batch.size()==100) { insertBatch(batch);batch.clear(); }
         }

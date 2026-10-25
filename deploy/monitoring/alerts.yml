@@ -37,15 +37,15 @@ groups:
         labels: {severity: warning}
         annotations: {summary: "Redis库存准入故障，订单将按原编号恢复"}
       - alert: TicketPaymentDeadLetters
-        expr: ticket_mq_queue_messages{queue="dead"} > 0
+        expr: ticket_mq_queue_messages{queue=~"dead|purchase_dead"} > 0
         for: 10s
         labels: {severity: warning}
-        annotations: {summary: "支付消息进入死信，请核对后使用现有重放工具"}
+        annotations: {summary: "交易消息进入死信，请核对原事件与业务进度后恢复"}
       - alert: TicketPaymentQueueBacklog
-        expr: ticket_mq_queue_messages{queue="payment"} > 100
+        expr: ticket_mq_queue_messages{queue=~"payment|purchase"} > 100
         for: 1m
         labels: {severity: warning}
-        annotations: {summary: "支付消息队列积压超过100条"}
+        annotations: {summary: "交易消息队列积压超过100条"}
       - alert: TicketMqMetricsCollectorFailed
         expr: ticket_mq_collector_healthy == 0
         for: 20s

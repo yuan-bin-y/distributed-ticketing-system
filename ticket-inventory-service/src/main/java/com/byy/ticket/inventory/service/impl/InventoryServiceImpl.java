@@ -58,7 +58,7 @@ public class InventoryServiceImpl implements InventoryService {
     @Override
     public StockReservationVO reserve(ReserveStockDTO request) {
         validateRequest(request);
-        if(admissions!=null)admissions.ensureForLegacy(request);
+        if(admissions!=null&&reservationMapper.selectByOrderId(request.orderId())==null)admissions.ensureForLegacy(request);
         // 必须在开启事务前领取，且在事务提交/回滚以后释放。Redis只保护并发，SQL仍决定库存。
         try (HotStockGate.Permit permit=hotStockGate.acquire(request.ticketTierId())) {
             return reservationTransaction.execute(status -> reserveInTransaction(request));
@@ -77,6 +77,7 @@ public class InventoryServiceImpl implements InventoryService {
         candidate.setQuantity(request.quantity());
         candidate.setExpiresAt(request.expiresAt());
         candidate.setStatus(ReservationStatus.RESERVED.name());
+        candidate.setSeatFingerprint(com.byy.ticket.common.seat.SeatSelection.fingerprint(request.seatIds()));
 
         // 并发的相同 orderId 在唯一键处等待。不能依赖 JDBC 的“影响行数”区分插入和重复。
         PerformanceSpan.measure("sql.reservation.insert",()->reservationMapper.insertOrKeep(candidate));
@@ -155,6 +156,7 @@ public class InventoryServiceImpl implements InventoryService {
             throw new IllegalStateException("预留记录与库存数量不一致");
         }
         reservation.setStatus(target.name());
+        if(admissions!=null)admissions.seatsFinishedWithinTransaction(reservation.getOrderId(),reservation.getTicketTierId(),target==ReservationStatus.SOLD);
         if(admissions!=null&&target==ReservationStatus.RELEASED)admissions.releasedWithinTransaction(reservation.getOrderId(),reservation.getTicketTierId());
         return toVO(reservation);
     }
@@ -195,7 +197,8 @@ public class InventoryServiceImpl implements InventoryService {
         if (!request.sessionId().equals(reservation.getSessionId())
                 || !request.ticketTierId().equals(reservation.getTicketTierId())
                 || !request.quantity().equals(reservation.getQuantity())
-                || !request.expiresAt().equals(reservation.getExpiresAt())) {
+                || !request.expiresAt().equals(reservation.getExpiresAt())
+                || !com.byy.ticket.common.seat.SeatSelection.fingerprint(request.seatIds()).equals(reservation.getSeatFingerprint())) {
             throw new InventoryConflictException("同一订单关联编号的预留参数必须一致");
         }
     }

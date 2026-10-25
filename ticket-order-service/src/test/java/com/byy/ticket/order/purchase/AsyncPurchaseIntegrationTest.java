@@ -70,6 +70,12 @@ class AsyncPurchaseIntegrationTest {
         assertFalse(tx.create(item.getRequestId(),"old_owner",LocalDateTime.now(ZoneOffset.ofHours(8))));
         assertEquals(0,sql.queryForObject("SELECT COUNT(*) FROM t_order WHERE user_id=4",Integer.class));
     }
+    @Test void asyncCannotReuseSyncKeyWithDifferentPurchaseParameters(){
+        var item=candidate(7,"mixed_conflict");var json=new ObjectMapper();var rule=json.readValue(item.getRuleJson(),TicketPurchaseRuleResponse.class);
+        context.getBean(OrderTransactionService.class).createAccepted(item.getRequestId(),7L,new OrderCreateDTO(1L,1,item.getIdempotencyKey()),rule,BigDecimal.ONE,item.getAcceptedAt(),item.getExpiresAt());
+        item.setRequestJson(json.writeValueAsString(new OrderCreateDTO(1L,2,item.getIdempotencyKey())));item.setQuantity(2);
+        assertThrows(com.byy.ticket.order.exception.OrderConflictException.class,()->tx.accept(item));assertNull(accepted.selectById(item.getRequestId()));
+    }
     @Test void failedPublisherHasReviewStateAndAuditedReplayPreservesIdentity(){
         var item=tx.accept(candidate(5,"review"));String event=sql.queryForObject("SELECT event_id FROM t_order_outbox WHERE request_id=?",String.class,item.getRequestId());
         sql.update("UPDATE t_order_outbox SET status='REVIEW_REQUIRED',attempt_count=20 WHERE event_id=?",event);tx.replay(event,99,"修复交换机后重新投递");
@@ -78,7 +84,7 @@ class AsyncPurchaseIntegrationTest {
     }
     @Test @EnabledIfSystemProperty(named="ticket.test.rabbitmq",matches="true")
     void realBrokerConfirmFailureRecoveryAndDuplicateConsumption()throws Exception{
-        var connection=new org.springframework.amqp.rabbit.connection.CachingConnectionFactory("127.0.0.1",15673);
+        var connection=new org.springframework.amqp.rabbit.connection.CachingConnectionFactory("127.0.0.1",Integer.getInteger("ticket.test.rabbitmq.port",15673));
         connection.setPublisherConfirmType(org.springframework.amqp.rabbit.connection.CachingConnectionFactory.ConfirmType.CORRELATED);connection.setPublisherReturns(true);
         var rabbit=new org.springframework.amqp.rabbit.core.RabbitTemplate(connection);rabbit.setMandatory(true);
         var admin=new org.springframework.amqp.rabbit.core.RabbitAdmin(connection);String prefix="ticket-test-"+java.util.UUID.randomUUID();

@@ -24,7 +24,9 @@ public class PaymentQueueMetrics {
                 new QueueSample("retry1",prefix+".order.payment-retry-1"),
                 new QueueSample("retry2",prefix+".order.payment-retry-2"),
                 new QueueSample("retry3",prefix+".order.payment-retry-3"),
-                new QueueSample("dead",prefix+".order.payment-dead"));
+                new QueueSample("dead",prefix+".order.payment-dead"),
+                new QueueSample("purchase",prefix+".order.purchase-requested"),
+                new QueueSample("purchase_dead",prefix+".order.purchase-dead"));
         for(var queue:queues) Gauge.builder("ticket.mq.queue.messages",queue,q->q.messages)
                 .tag("queue",queue.label).register(metrics);
         Gauge.builder("ticket.mq.collector.healthy",this,c->c.healthy).register(metrics);

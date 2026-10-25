@@ -38,10 +38,11 @@ public class AsyncPurchaseWorker {
         // 同步入口可能已经完成同一请求；优先核对订单事实，不能取消其库存。
         if(orders.selectByRequest(item.getUserId(),item.getIdempotencyKey())!=null){acceptance.finish(item.getRequestId(),token,"CREATED",null,0);return;}
         var rule=json.readValue(item.getRuleJson(),TicketPurchaseRuleResponse.class);
-        inventory.cancel(new StockReservationRequest(item.getRequestId(),rule.sessionId(),rule.ticketTierId(),item.getQuantity(),item.getExpiresAt()));
+        var request=json.readValue(item.getRequestJson(),com.byy.ticket.order.dto.order.OrderCreateDTO.class);
+        inventory.cancel(new StockReservationRequest(item.getRequestId(),rule.sessionId(),rule.ticketTierId(),item.getQuantity(),item.getExpiresAt(),request.seatIds()));
         acceptance.finish(item.getRequestId(),token,"REJECTED",item.getLastError(),0);
     }
-    @Scheduled(fixedDelayString="${ticket.purchase.recovery-ms:5000}")
+    @Scheduled(scheduler="purchaseRecoveryScheduler",fixedDelayString="${ticket.purchase.recovery-ms:5000}")
     public void recover(){try{for(String id:acceptance.due())try{advance(id);}catch(RuntimeException failure){log.warn("异步受理等待恢复，requestId={}",id);}}catch(RuntimeException failure){log.warn("异步受理扫描失败，下轮继续");}}
     private String summary(RuntimeException error){String value=error.getMessage()==null?error.getClass().getSimpleName():error.getMessage();return value.substring(0,Math.min(256,value.length()));}
 }

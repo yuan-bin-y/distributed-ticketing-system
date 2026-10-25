@@ -20,16 +20,45 @@ public class StockAdmissionClient {
     private static final ParameterizedTypeReference<Result<Admission>> TYPE=new ParameterizedTypeReference<>(){};
     private final RestClient client;
     private final boolean enabled;
+    private final com.byy.ticket.resilience.HttpCallProtection protection;
     public StockAdmissionClient(@Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,InventoryClientProperties properties,
             OrderInventoryCredential credential,@Value("${ticket.stock-admission.enabled:false}") boolean enabled){
+        this(builder,properties,credential,enabled,new com.byy.ticket.resilience.HttpResilienceProperties(com.byy.ticket.resilience.HttpResilienceProperties.defaults(),com.byy.ticket.resilience.HttpResilienceProperties.defaults(),com.byy.ticket.resilience.HttpResilienceProperties.defaults()));
+    }
+    @Autowired
+    public StockAdmissionClient(@Qualifier("inventoryRestClientBuilder") RestClient.Builder builder,InventoryClientProperties properties,
+            OrderInventoryCredential credential,@Value("${ticket.stock-admission.enabled:false}") boolean enabled,com.byy.ticket.resilience.HttpResilienceProperties settings){
         client=builder.clone().baseUrl("http://"+properties.serviceId()).defaultHeader(OrderInventoryCredential.HEADER,credential.value()).build();this.enabled=enabled;
+        protection=new com.byy.ticket.resilience.HttpCallProtection("order-inventory-admission",settings.inventory(),
+            error->error instanceof InventoryServiceCallException remote&&remote.getReason()!=Reason.CONFLICT&&remote.isCircuitBreakerFailure(),
+            denied->new InventoryServiceCallException(Reason.UNAVAILABLE,"库存准入暂被保护组件拒绝，请保持原请求核对",denied));
     }
     public boolean enabled(){return enabled;}
     /** 新请求采用建议到期时间，重试以库存服务返回的首次到期时间为准。 */
     public Admission hold(StockReservationRequest request){return call(request,"");}
     /** 仅明确没有正式预留时取消；库存服务的墓碑会防止迟到请求重新扣票。 */
     public Admission cancel(StockReservationRequest request){return call(request,"/cancel");}
+    public record SeatState(String seatId,int ordinal,String status,long version){}
+    public record SeatChanges(java.util.List<SeatState> records,long version,int nextAfter,boolean hasMore){}
+    /** 只转发有界的区域视窗，不公开库存服务地址或服务凭证。 */
+    public SeatChanges seats(long tier,String region,int rowStart,int rowCount,int columnStart,int columnCount,long since,long through,int after,int limit){
+        return protection.execute(()->seatsHttp(tier,region,rowStart,rowCount,columnStart,columnCount,since,through,after,limit));
+    }
+    private SeatChanges seatsHttp(long tier,String region,int rowStart,int rowCount,int columnStart,int columnCount,long since,long through,int after,int limit){
+        if(tier<1||region==null||!region.matches("[A-Za-z0-9_-]{1,20}")||rowStart<1||rowStart>500||rowCount<1||rowCount>20||since<0||through<0||after<0||limit<1||limit>200)throw new IllegalArgumentException("座位视窗参数无效");
+        if(columnStart<1||columnStart>500||columnCount<1||columnCount>50)throw new IllegalArgumentException("列视窗范围无效");
+        try{return client.get().uri(builder->builder.path("/internal/stocks/{tier}/seats").queryParam("region",region).queryParam("rowStart",rowStart).queryParam("rowCount",rowCount).queryParam("columnStart",columnStart).queryParam("columnCount",columnCount).queryParam("since",since).queryParam("through",through).queryParam("after",after).queryParam("limit",limit).build(tier))
+            .exchange((sent,received)->{
+                if(!received.getStatusCode().is2xxSuccessful())throw new InventoryServiceCallException(received.getStatusCode().value()==409?Reason.CONFLICT:Reason.UNAVAILABLE,"座位状态暂时无法读取");
+                var result=received.bodyTo(new ParameterizedTypeReference<Result<SeatChanges>>(){});var value=result==null?null:result.data();
+                if(result==null||!"OK".equals(result.code())||value==null||value.records()==null||value.records().size()>limit||value.version()<since||value.nextAfter()<after)throw new InventoryServiceCallException(Reason.INVALID_RESPONSE,"座位视窗响应不完整");return value;
+            });
+        }catch(RestClientException failure){throw new InventoryServiceCallException(Reason.UNAVAILABLE,"座位状态读取失败",failure);}
+    }
     private Admission call(StockReservationRequest request,String suffix){
+        return protection.execute(()->callHttp(request,suffix));
+    }
+    private Admission callHttp(StockReservationRequest request,String suffix){
         try{return client.post().uri("/internal/stock-admissions"+suffix).contentType(MediaType.APPLICATION_JSON)
             .header(com.byy.ticket.common.trace.TraceIdContext.HTTP_HEADER,com.byy.ticket.common.trace.TraceIdContext.getOrCreate())
             .body(request).exchange((sent,received)->{

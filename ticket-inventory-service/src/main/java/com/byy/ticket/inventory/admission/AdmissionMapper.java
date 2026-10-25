@@ -6,12 +6,12 @@ import org.apache.ibatis.annotations.*;
 /** 所有写方法在持有对应库存行锁时使用，统一与正式预留及重建的串行顺序。 */
 @Mapper
 public interface AdmissionMapper {
-    @Select("SELECT * FROM t_stock_admission WHERE order_no=#{id}")
+    @Select("SELECT order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint FROM t_stock_admission WHERE order_no=#{id}")
     StockAdmission find(String id);
 
     @Insert("""
-        INSERT INTO t_stock_admission(order_no,ticket_tier_id,session_id,quantity,expires_at,status)
-        VALUES(#{orderNo},#{ticketTierId},#{sessionId},#{quantity},#{expiresAt},#{status})
+        INSERT INTO t_stock_admission(order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint)
+        VALUES(#{orderNo},#{ticketTierId},#{sessionId},#{quantity},#{expiresAt},#{status},#{seatFingerprint})
         ON DUPLICATE KEY UPDATE order_no=t_stock_admission.order_no
         """)
     int insert(StockAdmission record);
@@ -19,8 +19,10 @@ public interface AdmissionMapper {
     @Update("UPDATE t_stock_admission SET status=#{status} WHERE order_no=#{id}")
     int state(@Param("id") String id,@Param("status") String status);
 
-    @Select("SELECT * FROM t_stock_admission WHERE ticket_tier_id=#{tier} AND status='HELD' ORDER BY order_no")
+    @Select("SELECT order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint FROM t_stock_admission WHERE ticket_tier_id=#{tier} AND status='HELD' ORDER BY order_no")
     List<StockAdmission> pending(long tier);
+    @Select("SELECT order_no,ticket_tier_id,session_id,quantity,expires_at,status,seat_fingerprint FROM t_stock_admission WHERE ticket_tier_id=#{tier} AND status='APPLIED' ORDER BY order_no")
+    List<StockAdmission> applied(long tier);
 
     @Select("SELECT COALESCE(SUM(quantity),0) FROM t_stock_admission WHERE ticket_tier_id=#{tier} AND status='HELD'")
     long heldQuantity(long tier);

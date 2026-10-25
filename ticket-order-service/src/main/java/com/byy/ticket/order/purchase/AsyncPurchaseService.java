@@ -37,7 +37,7 @@ public class AsyncPurchaseService {
         BigDecimal amount=rule.price().multiply(BigDecimal.valueOf(request.quantity()));
         if(rule.price().scale()>2||rule.ticketTierName().length()>128||amount.compareTo(new BigDecimal("9999999999999999.99"))>0)throw new IllegalArgumentException("金额或名称无法保存为订单快照");
         String id=PurchaseRequestId.of(user,request.idempotencyKey());
-        var held=inventory.hold(new StockReservationRequest(id,rule.sessionId(),rule.ticketTierId(),request.quantity(),now.plus(settings.paymentWindow())));
+        var held=inventory.hold(new StockReservationRequest(id,rule.sessionId(),rule.ticketTierId(),request.quantity(),now.plus(settings.paymentWindow()),request.seatIds()));
         if(!java.util.Set.of("HELD","APPLIED").contains(held.status()))throw new OrderConflictException("库存预扣已结束");
         var candidate=new PurchaseAcceptance();candidate.setRequestId(id);candidate.setUserId(user);candidate.setIdempotencyKey(request.idempotencyKey());candidate.setTicketTierId(request.ticketTierId());candidate.setQuantity(request.quantity());
         candidate.setRequestJson(json.writeValueAsString(request));candidate.setRuleJson(json.writeValueAsString(rule));candidate.setAmount(amount);candidate.setExpiresAt(held.expiresAt());candidate.setAcceptedAt(now);

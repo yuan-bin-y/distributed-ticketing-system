@@ -99,7 +99,7 @@ public class OrderServiceImpl implements OrderService {
         TicketOrder order;
         String orderNo=com.byy.ticket.order.service.PurchaseRequestId.of(userId,request.idempotencyKey());
         var stockRequest=new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),
-                now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS));
+                now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS),request.seatIds());
         LocalDateTime expiresAt=admissions.enabled()?admissions.hold(stockRequest).expiresAt():stockRequest.expiresAt();
         try {
             order = PerformanceSpan.measure("local.transaction",()->transactions.createAccepted(orderNo,userId,request,rule,amount,now,expiresAt));
@@ -109,7 +109,7 @@ public class OrderServiceImpl implements OrderService {
             return repeat(existing, request);
         } catch(OrderConflictException rejected) {
             // 本地事务已明确回滚，可取消准入；失败不掩盖原错误，库存后台在期限后继续核对。
-            if(admissions.enabled())try{admissions.cancel(new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),expiresAt));}
+            if(admissions.enabled())try{admissions.cancel(new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),expiresAt,request.seatIds()));}
             catch(RuntimeException uncertain){rejected.addSuppressed(uncertain);}
             throw rejected;
         }
@@ -168,7 +168,8 @@ public class OrderServiceImpl implements OrderService {
     private OrderDetailVO repeat(TicketOrder order, OrderCreateDTO request) {
         OrderItem item = items.selectByOrderId(order.getId());
         if (item == null) { throw new IllegalStateException("订单购买快照缺失"); }
-        if (!item.getTicketTierId().equals(request.ticketTierId()) || !item.getQuantity().equals(request.quantity())) {
+        if (!item.getTicketTierId().equals(request.ticketTierId()) || !item.getQuantity().equals(request.quantity())
+            ||!request.seatIds().equals(com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()))) {
             throw new OrderConflictException("同一购买幂等键必须使用相同票档和数量");
         }
         return detail(order);
@@ -181,7 +182,7 @@ public class OrderServiceImpl implements OrderService {
         if (item == null) { throw new IllegalStateException("订单购买快照缺失"); }
         return new OrderDetailVO(order.getOrderNo(), order.getStatus(), item.getEventId(), item.getSessionId(),
                 item.getTicketTierId(), item.getTicketTierName(), item.getUnitPrice(), item.getQuantity(),
-                order.getTotalAmount(), order.getExpiresAt(), order.getReservationId(), order.getCreatedAt());
+                order.getTotalAmount(), order.getExpiresAt(), order.getReservationId(), order.getCreatedAt(),com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()),item.getRuleVersion());
     }
 
     /** Service 入口也校验参数，避免内部调用绕过 Controller 的 Valid。 */

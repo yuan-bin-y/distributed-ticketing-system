@@ -35,4 +35,6 @@ public class OrderItem {
     private Integer purchaseLimit;
     private Integer maxSessions;
     private Integer maxPerOrder;
+    /** 经过规范化的座位标识快照，空字符串表示非选座票；标识本身不允许包含逗号。 */
+    private String seatIds;
 }
