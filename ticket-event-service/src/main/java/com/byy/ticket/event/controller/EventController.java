@@ -23,35 +23,37 @@ import java.util.List;
 @RequestMapping("/api/events")
 public class EventController {
     private final EventService eventService;
+    private final com.byy.ticket.event.cache.DisplayQueryExecutor display;
 
     /**
      * 通过构造方法注入活动业务接口，由 Spring 提供 EventServiceImpl 实例。
      */
-    public EventController(EventService eventService) {
+    public EventController(EventService eventService, com.byy.ticket.event.cache.DisplayQueryExecutor display) {
         this.eventService = eventService;
+        this.display = display;
     }
 
     /**
      * GET /api/events：校验页码和每页条数，分页查询已发布活动。
      */
     @GetMapping
-    public Result<PageVO<EventListItemVO>> listEvents(@Valid @ModelAttribute EventPageQueryDTO queryDTO) {
-        return Result.success(eventService.listEvents(queryDTO));
+    public org.springframework.web.context.request.async.DeferredResult<Result<PageVO<EventListItemVO>>> listEvents(@Valid @ModelAttribute EventPageQueryDTO queryDTO) {
+        return display.submit("page:" + queryDTO.page() + ":" + queryDTO.pageSize(), () -> eventService.listEvents(queryDTO));
     }
 
     /**
      * GET /api/events/{eventId}：根据活动 ID 查询已发布活动的详情。
      */
     @GetMapping("/{eventId}")
-    public Result<EventDetailVO> getEvent(@PathVariable Long eventId) {
-        return Result.success(eventService.getEvent(eventId));
+    public org.springframework.web.context.request.async.DeferredResult<Result<EventDetailVO>> getEvent(@PathVariable Long eventId) {
+        return display.submit("detail:" + eventId, () -> eventService.getEvent(eventId));
     }
 
     /**
      * GET /api/events/{eventId}/sessions：查询活动的已发布场次和各场次启用的票档。
      */
     @GetMapping("/{eventId}/sessions")
-    public Result<List<EventSessionVO>> listSessions(@PathVariable Long eventId) {
-        return Result.success(eventService.listSessions(eventId));
+    public org.springframework.web.context.request.async.DeferredResult<Result<List<EventSessionVO>>> listSessions(@PathVariable Long eventId) {
+        return display.submit("sessions:" + eventId, () -> eventService.listSessions(eventId));
     }
 }

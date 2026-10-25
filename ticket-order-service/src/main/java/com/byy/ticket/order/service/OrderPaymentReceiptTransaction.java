@@ -15,9 +15,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class OrderPaymentReceiptTransaction {
     private final OrderMapper orders;
     private final TraceSupport traces;
+    private final org.springframework.context.ApplicationEventPublisher events;
 
     /** 注入订单自己的 Mapper。 */
-    public OrderPaymentReceiptTransaction(OrderMapper orders, TraceSupport traces) { this.orders = orders; this.traces = traces; }
+    public OrderPaymentReceiptTransaction(OrderMapper orders, TraceSupport traces,
+            org.springframework.context.ApplicationEventPublisher events) {
+        this.orders = orders; this.traces = traces; this.events = events;
+    }
 
     /** 与超时关闭竞争；有原预留编号的付款进入库存核对，重复通知不重置后台进度。 */
     @Transactional
@@ -39,6 +43,7 @@ public class OrderPaymentReceiptTransaction {
         boolean fulfilled=OrderStatus.PAID.name().equals(order.getStatus())
                 || OrderStatus.COMPLETED.name().equals(order.getStatus());
         if (order.getPaymentNo() != null && (!reversed || !fulfilled)) {
+            events.publishEvent(new PaymentFulfillmentRequested(order.getId()));
             return new PaymentReceiptVO(order.getOrderNo(), order.getPaymentNo(), true);
         }
         boolean canReconcile = order.getReservationId() != null
@@ -53,6 +58,7 @@ public class OrderPaymentReceiptTransaction {
             if (orders.saveTraceContext(order.getId(), context.traceParent(), context.traceState()) != 1)
                 throw new IllegalStateException("付款处理上下文保存失败");
         }
+        events.publishEvent(new PaymentFulfillmentRequested(order.getId()));
         return new PaymentReceiptVO(order.getOrderNo(), payment.paymentNo(), true);
     }
 }

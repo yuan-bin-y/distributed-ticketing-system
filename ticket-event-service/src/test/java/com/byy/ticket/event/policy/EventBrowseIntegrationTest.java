@@ -41,4 +41,17 @@ class EventBrowseIntegrationTest {
         assertEquals(100,browse.tiers(1,1,0,100).records().size());assertTrue(browse.tiers(1,2,0,20).records().isEmpty());
         assertThrows(IllegalArgumentException.class,()->browse.sessions(1,0,101));assertThrows(RuntimeException.class,()->browse.sessions(2,0,20));
     }
+    @Test void purchaseJoinUsesCurrentPublishedPolicyAndRejectsHiddenEvent() {
+        var sql = new JdbcTemplate(db.dataSource);
+        var query = context.getBean(EventDatabaseQueries.class);
+        assertEquals(0L, query.getPurchaseRule(1L).ruleVersion());
+        sql.update("INSERT INTO t_purchase_policy(event_id,version,max_sessions,max_per_order,status,note) VALUES(1,1,3,2,'PUBLISHED','test')");
+        sql.update("UPDATE t_event SET purchase_policy_version=1 WHERE id=1");
+        try {
+            assertEquals(1L, query.getPurchaseRule(1L).ruleVersion());
+            assertEquals(2, query.getPurchaseRule(1L).maxPerOrder());
+            sql.update("UPDATE t_event SET status='DRAFT' WHERE id=1");
+            assertThrows(com.byy.ticket.common.exception.ResourceNotFoundException.class, () -> query.getPurchaseRule(1L));
+        } finally { sql.update("UPDATE t_event SET status='PUBLISHED',purchase_policy_version=0 WHERE id=1"); }
+    }
 }

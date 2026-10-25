@@ -34,8 +34,6 @@ public class EventDatabaseQueries {
     private final EventMapper eventMapper;
     private final EventSessionMapper sessionMapper;
     private final TicketTierMapper tierMapper;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.event.policy.PurchasePolicyMapper policies;
 
     /**
      * 注入活动、场次、票档 Mapper；所有查询都使用活动服务自己的数据库。
@@ -107,28 +105,9 @@ public class EventDatabaseQueries {
             throw new IllegalArgumentException("票档ID必须大于零");
         }
 
-        // 1. 票档必须存在且已启用。
-        TicketTier tier = tierMapper.selectById(ticketTierId);
-        if (tier == null || !Integer.valueOf(1).equals(tier.getEnabled())) {
-            throw new ResourceNotFoundException("票档不存在或未启用");
-        }
-
-        // 2. 票档所属场次必须已发布。
-        EventSession session = sessionMapper.selectById(tier.getSessionId());
-        if (session == null || !PUBLISHED.equals(session.getStatus())) {
-            throw new ResourceNotFoundException("场次不存在或未发布");
-        }
-
-        // 3. 所属活动同样必须已发布。
-        Event event = requirePublishedEvent(session.getEventId());
-
-        // 4. 返回规则，开售时间和购买数量由后续订单服务校验。
-        var policy=policies.active(event.getId());
-        return new TicketPurchaseRuleVO(
-                event.getId(), session.getId(), tier.getId(), tier.getName(), tier.getPrice(),
-                session.getSaleStartTime(), session.getSaleEndTime(), session.getPurchaseLimit(),
-                policy==null?0L:policy.version(),policy==null?Integer.MAX_VALUE:policy.maxSessions(),policy==null?Integer.MAX_VALUE:policy.maxPerOrder()
-        );
+        var rule = tierMapper.purchaseRule(ticketTierId);
+        if (rule == null) throw new ResourceNotFoundException("票档不存在或活动、场次尚未发布");
+        return rule;
     }
 
     /**

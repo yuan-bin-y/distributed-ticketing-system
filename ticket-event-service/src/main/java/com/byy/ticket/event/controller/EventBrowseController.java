@@ -6,7 +6,16 @@ import org.springframework.web.bind.annotation.*;
 @RestController @RequestMapping("/api/events/{eventId}/sessions")
 public class EventBrowseController {
     private final EventBrowseService service;
-    public EventBrowseController(EventBrowseService service){this.service=service;}
-    @GetMapping("/page") public Result<CursorPage<EventBrowseMapper.SessionSummary>> sessions(@PathVariable long eventId,@RequestParam(defaultValue="0") long after,@RequestParam(defaultValue="20") int limit){return Result.success(service.sessions(eventId,after,limit));}
-    @GetMapping("/{sessionId}/ticket-tiers/page") public Result<CursorPage<EventBrowseMapper.TierSummary>> tiers(@PathVariable long eventId,@PathVariable long sessionId,@RequestParam(defaultValue="0") long after,@RequestParam(defaultValue="20") int limit){return Result.success(service.tiers(eventId,sessionId,after,limit));}
+    private final com.byy.ticket.event.cache.DisplayQueryExecutor display;
+    public EventBrowseController(EventBrowseService service, com.byy.ticket.event.cache.DisplayQueryExecutor display){this.service=service;this.display=display;}
+    @GetMapping("/page")
+    public org.springframework.web.context.request.async.DeferredResult<Result<CursorPage<EventBrowseMapper.SessionSummary>>> sessions(
+            @PathVariable long eventId, @RequestParam(defaultValue="0") long after, @RequestParam(defaultValue="20") int limit) {
+        return display.submit("browse:sessions:"+eventId+":"+after+":"+limit, () -> service.sessions(eventId,after,limit));
+    }
+    @GetMapping("/{sessionId}/ticket-tiers/page")
+    public org.springframework.web.context.request.async.DeferredResult<Result<CursorPage<EventBrowseMapper.TierSummary>>> tiers(
+            @PathVariable long eventId, @PathVariable long sessionId, @RequestParam(defaultValue="0") long after, @RequestParam(defaultValue="20") int limit) {
+        return display.submit("browse:tiers:"+eventId+":"+sessionId+":"+after+":"+limit, () -> service.tiers(eventId,sessionId,after,limit));
+    }
 }

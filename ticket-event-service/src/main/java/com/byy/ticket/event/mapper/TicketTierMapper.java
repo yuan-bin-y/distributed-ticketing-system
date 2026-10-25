@@ -10,4 +10,16 @@ import org.apache.ibatis.annotations.Mapper;
  */
 @Mapper
 public interface TicketTierMapper extends BaseMapper<TicketTier> {
+    /** 单次一致性读取得发布状态与当前规则，保留实时查库的业务语义。 */
+    @org.apache.ibatis.annotations.Select("""
+            SELECT e.id event_id, s.id session_id, t.id ticket_tier_id, t.name ticket_tier_name, t.price,
+                   s.sale_start_time, s.sale_end_time, s.purchase_limit,
+                   COALESCE(p.version,0) rule_version, COALESCE(p.max_sessions,2147483647) max_sessions,
+                   COALESCE(p.max_per_order,2147483647) max_per_order
+            FROM t_ticket_tier t JOIN t_event_session s ON s.id=t.session_id
+            JOIN t_event e ON e.id=s.event_id
+            LEFT JOIN t_purchase_policy p ON p.event_id=e.id AND p.version=e.purchase_policy_version AND p.status='PUBLISHED'
+            WHERE t.id=#{id} AND t.enabled=1 AND s.status='PUBLISHED' AND e.status='PUBLISHED'
+            """)
+    com.byy.ticket.event.vo.event.TicketPurchaseRuleVO purchaseRule(Long id);
 }
