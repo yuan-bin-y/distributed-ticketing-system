@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "分布式票务交易平台 内部API",
-    "version": "2.0.0",
-    "description": "当前服务间HTTP协作契约，不经过Gateway。各操作servers分别标明Docker宿主机端口和IDEA端口，使用分方向服务凭证，用户JWT不能替代。Docker Order不映射宿主机端口；付款通知HTTP入口仅作为兼容方式，MQ模式无需手工调用。库存预留准入暂满返回503 STOCK_BUSY，应保持原订单编号和参数核对或重试；这不代表库存不足或整个服务故障。历史/internal/orders/stock-reservations被安全链拒绝，未列为可调用接口。调试内部写接口应使用独立数据。"
+    "version": "3.0.0",
+    "description": "当前服务间HTTP协作契约，不经过Gateway。各操作servers分别标明Docker宿主机端口和IDEA端口，使用分方向服务凭证，用户JWT不能替代。Docker Order不映射宿主机端口；付款通知HTTP入口仅作为兼容方式，MQ模式无需手工调用。库存预留准入暂满返回503 STOCK_BUSY，应保持原订单编号和参数核对或重试；这不代表库存不足或整个服务故障。历史/internal/orders/stock-reservations被安全链拒绝，未列为可调用接口。调试内部写接口应使用独立数据。 新增Order库存预扣和取消、Event座位初始化及Order座位增量查询。Redis预扣有持久化意图，MySQL条件更新仍是最终库存护栏。HTTP超时不直接回补数量；取消墓碑与正式预留串行核对。"
   },
   "servers": [
     {
@@ -758,7 +758,7 @@
         ],
         "summary": "Order预留库存",
         "operationId": "reserveStock",
-        "description": "首次expiresAt晚于当前时间。相同orderId和全部参数只预留一次；重复可返回RESERVED/SOLD/RELEASED，释放后不再次扣库存。库存不足或参数冲突409。 开启热点保护时先领取按票档共享的Redis并发额度，满额返回503 STOCK_BUSY，不进入库存预留事务；保持原orderId、票档和数量重试，不生成新预留请求。库存不足仍为409 CONFLICT。",
+        "description": "首次expiresAt晚于当前时间。相同orderId和全部参数只预留一次；重复可返回RESERVED/SOLD/RELEASED，释放后不再次扣库存。库存不足或参数冲突409。 开启热点保护时先领取按票档共享的Redis并发额度，满额返回503 STOCK_BUSY，不进入库存预留事务；保持原orderId、票档和数量重试，不生成新预留请求。库存不足仍为409 CONFLICT。 开启预扣后正式预留须沿用预扣编号、期限和座位；数量、座位状态与记录同事务提交。",
         "responses": {
           "200": {
             "description": "成功",
@@ -2063,6 +2063,664 @@
           }
         ]
       }
+    },
+    "/internal/stock-admissions": {
+      "post": {
+        "tags": [
+          "Inventory内部"
+        ],
+        "summary": "Order获取库存与座位预扣",
+        "operationId": "v3_post__internal_stock_admissions",
+        "description": "先Lua原子检查库存及所选座位，再持久化预扣意图后返回。未命中数量或座位直接409。重试沿用原编号，服务端返回首次expiresAt；正式reserve必须使用此首次期限。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__internal_stock_admissions"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveStockDTO"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OrderInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
+    },
+    "/internal/stock-admissions/cancel": {
+      "post": {
+        "tags": [
+          "Inventory内部"
+        ],
+        "summary": "Order取消尚未落实的预扣",
+        "operationId": "v3_post__internal_stock_admissions_cancel",
+        "description": "先持久化CANCELLED墓碑防止迟到reserve再扣票，再修复Redis。已APPLIED须通过正式预留release接口释放，不能直接取消。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__internal_stock_admissions_cancel"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReserveStockDTO"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OrderInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
+    },
+    "/internal/stocks/initializations/{tierId}/seats": {
+      "post": {
+        "tags": [
+          "Inventory内部"
+        ],
+        "summary": "Event按布局快照初始化动态座位",
+        "operationId": "v3_post__internal_stocks_initializations__tierId__seats",
+        "description": "首次要求无购买历史且库存完整可用；相同摘要幂等，不重置座位。须启用预扣。动态座位和Redis准备好后返回，Event再标记READY。",
+        "parameters": [
+          {
+            "name": "tierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__internal_stocks_initializations__tierId__seats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SeatLayout"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "EventInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
+    },
+    "/internal/stocks/{tierId}/seats": {
+      "get": {
+        "tags": [
+          "Inventory内部"
+        ],
+        "summary": "Order读取座位视窗与增量",
+        "operationId": "v3_get__internal_stocks__tierId__seats",
+        "description": "首次since=0、through=0、after=0。响应hasMore时固定原since及返回version作为through，使用nextAfter继续；本批取完才把since推进到version并令through/after为0。视窗变化应重置since=0。状态只用于提示，最终以预扣结果为准。",
+        "parameters": [
+          {
+            "name": "tierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,20}$"
+            }
+          },
+          {
+            "name": "rowStart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "rowCount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "columnStart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "columnCount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "through",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__internal_stocks__tierId__seats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OrderInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -2242,6 +2900,21 @@
             "format": "int32",
             "minimum": 1,
             "example": 2
+          },
+          "ruleVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "maxSessions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "maxPerOrder": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
           }
         },
         "required": [
@@ -2252,7 +2925,10 @@
           "price",
           "saleStartTime",
           "saleEndTime",
-          "purchaseLimit"
+          "purchaseLimit",
+          "ruleVersion",
+          "maxSessions",
+          "maxPerOrder"
         ]
       },
       "ResultTicketStockVO": {
@@ -2481,6 +3157,17 @@
             "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
             "example": "2027-06-01T10:00:00"
+          },
+          "seatIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,20}:[1-9][0-9]{0,2}:[1-9][0-9]{0,2}$"
+            },
+            "uniqueItems": true,
+            "maxItems": 100,
+            "default": [],
+            "description": "选座票档必须传入且数量等于quantity；普通票省略或传空。服务端排序后进行幂等比较。"
           }
         },
         "required": [
@@ -2848,6 +3535,329 @@
         "required": [
           "orderNo",
           "paymentNo"
+        ]
+      },
+      "SeatRegion": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,20}$"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "columns": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "code",
+          "rows",
+          "columns"
+        ]
+      },
+      "SeatLayout": {
+        "type": "object",
+        "properties": {
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "layoutHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeatRegion"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "ticketTierId",
+          "sessionId",
+          "layoutHash",
+          "regions"
+        ]
+      },
+      "SeatChanges": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seatId": {
+                  "type": "string"
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "AVAILABLE",
+                    "HELD",
+                    "RESERVED",
+                    "SOLD"
+                  ]
+                },
+                "version": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "seatId",
+                "ordinal",
+                "status",
+                "version"
+              ]
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nextAfter": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "records",
+          "version",
+          "nextAfter",
+          "hasMore"
+        ]
+      },
+      "StockAdmission": {
+        "type": "object",
+        "properties": {
+          "orderNo": {
+            "type": "string"
+          },
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "quantity": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "HELD",
+              "APPLIED",
+              "CANCELLED",
+              "RELEASED"
+            ]
+          },
+          "seatFingerprint": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "orderNo",
+          "ticketTierId",
+          "sessionId",
+          "quantity",
+          "expiresAt",
+          "status",
+          "seatFingerprint"
+        ]
+      },
+      "ResultOrder": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatChanges"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__internal_stock_admissions": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StockAdmission"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__internal_stock_admissions_cancel": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/StockAdmission"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "ResultEvent": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatLayout"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__internal_stocks_initializations__tierId__seats": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatLayout"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__internal_stocks__tierId__seats": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatChanges"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
         ]
       }
     },

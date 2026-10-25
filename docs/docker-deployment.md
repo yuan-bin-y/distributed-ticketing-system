@@ -139,4 +139,13 @@ Order不再绑定Windows固定18062端口；两个容器各自使用8062，经Na
 
 Compose默认开启Redis票档并发准入，并启动Prometheus。Grafana打开`http://localhost:3002/d/ticket-platform-overview`；Prometheus目标与告警位于`http://localhost:19090/targets`及`/alerts`。服务管理端口9000仅在Compose网络内开放。
 
-按票档的并发准入用于减少库存行竞争，MySQL 仍维护库存数量。告警覆盖服务健康、业务恢复积压、MQ 队列及采样异常，可在上述本地页面查看。
+Compose还默认开启 `TICKET_STOCK_ADMISSION_ENABLED=true`：Redis Lua先预扣数量及选中座位，成功意图落库；MySQL继续保存最终库存。两者采用可恢复的最终一致性。异步受理和支付使用不同的Outbox与MQ队列。
+
+购票演示页：`http://localhost:18060/ticket-demo/index.html`。管理员通过API创建草稿；选座票档须先配置与计划库存等量的区域网格，再等待全部READY后发布。用户可在页面登录、选座、异步下单及模拟付款。接口操作顺序见 [Apifox指南](apifox/README.md)。
+
+### 从此前版本升级
+
+本次包含Event规则/布局、Inventory预扣/座位和Order跨场次额度/受理/座位快照迁移。
+首次升级先执行 `停止项目.cmd`，保留数据卷，再执行 `更新并启动.cmd`。尤其不要混用新旧Order实例：
+额度回填期间所有Order写入都应停止。Flyway会回填原有效订单的活动场次额度，原订单与预留继续按原编号核对。
+不要编辑已经执行过的迁移文件或用删除卷来绕过校验。

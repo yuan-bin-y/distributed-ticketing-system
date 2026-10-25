@@ -1,5 +1,82 @@
 # 交易可靠性与部署运维
 
+## 前置预扣、规则与异步购票
+
+### 数量与座位的一致性边界
+
+Inventory负责Redis准入账本和自己的持久化意图。Lua原子检查可用量及整组选中座位，命中后
+保存 `t_stock_admission`，再返回成功；Order正式订单、额度与快照仍使用订单自己的本地事务。
+正式预留把意图改为 `APPLIED`，并在同一库存事务中扣MySQL数量、变更座位和保存预留。
+
+Redis不是MySQL的同步镜像。重建在库存行锁内使用
+`MySQL available_quantity - 尚未落实的HELD数量`，同时重建真正可选的座位和原请求去重记录。
+每次重建生成代次并落库，旧代次尚未保存的请求不能继续提交。
+Redis复制切换遗失已确认写入时，MySQL准入总额和座位条件更新仍保留最后护栏。
+
+取消先持久化 `CANCELLED` 墓碑，再修复Redis；它与正式预留共用库存行锁。
+到期只触发核对，不靠TTL删除记录来推断释放成功。响应丢失、连接超时或读取不到瞬时记录时，
+保持原编号核对，不能直接INCR归还库存。正式预留已落实时走原release流程；Redis数量归还可能
+等待下一轮重建，期间采取保守拒绝，不能绕过最终库存校验。
+
+参数：Inventory与Order的 `TICKET_STOCK_ADMISSION_ENABLED` 必须一致。Compose/HA默认开启；
+IDEA需显式配置。默认每5秒扫描，每轮最多20个到期票档，正常账本30秒进入核对；
+大量票档或Redis中断时恢复时间受积压和重试影响，不承诺固定恢复时限。
+
+### 规则和额度
+
+Drools DRL随应用构建，在启动时编译，购买请求使用独立会话。
+Event管理员配置的是经过校验的类型化参数，不上传可执行DRL。草稿发布或回滚影响新请求；
+已受理请求及订单保存规则版本与参数快照，后台不会重算价格或替换成最新规则。
+
+Order在本地事务中锁用户活动额度，维护不同场次名额、场次引用次数及累计票数。
+同场次多张订单只占一个场次名额，最后一张有效订单关闭或冲正完成后才归还。
+规则引擎的Java判断不能替代数据库并发控制。
+
+### 异步受理及治理
+
+`POST /api/orders/requests` 返回202前，受理与 `t_order_outbox` 已同事务提交。
+建单队列为 `<prefix>.order.purchase-requested`，交换机为 `<prefix>.purchase.exchange`，
+与支付成功消息完全独立。消费者核对原Outbox身份，从数据库读取权威购买快照，
+订单、额度及受理完成标记在同一事务提交；重复消息不重复建单。
+
+临时业务失败保存下一次恢复时间再ACK；数据库进度保存失败保留原消息并指数退避重投。
+非法消息只有在死信转发Confirm成功且无Return后才ACK。死信队列为
+`<prefix>.order.purchase-dead`，持续转发失败上限30秒退避，不静默丢弃原消息。
+Relay与受理恢复使用专用有界调度池，Broker等待不占用原订单履约调度线程。
+
+建单Outbox每轮失败20次后进入 `REVIEW_REQUIRED`。管理员先查看
+`GET /api/orders/admin/purchase-outbox/review`，核对原受理、正式订单及预扣事实，
+修复故障后调用 `POST /api/orders/admin/purchase-outbox/{eventId}/replay`，填写原因。
+原事件ID不变，操作人和原因记录在 `t_order_outbox_replay`；不能删除事件或修改其请求归属。
+
+工作流指标包含 `purchase_acceptance`、`purchase_outbox` 和 `purchase_outbox_review`；
+MQ深度包含 `purchase` 和 `purchase_dead`。原积压和人工核对告警也覆盖新流程。
+
+### 选座数据和查询
+
+Event保存区域尺寸与不可变摘要；Inventory保存可选、HELD、RESERVED、SOLD状态；
+Order保存座位快照，出票后每张电子票带对应座位。普通票继续使用空座位列表。
+布局只允许草稿配置，首次座位初始化要求完整可用库存且无购买历史；同摘要重试不重置座位。
+
+演示页只渲染可见行列。列表使用唯一ID游标，座位状态按视窗、固定through版本分页；
+页内变化版本相同也不能提前跳过剩余座位。本批结束才推进since，变更视窗从零读取。
+单次状态响应最多200条，视窗最多20行、50列，单票档布局最多20000席。
+
+### 回归命令
+
+原 `-Integration` 开启随机MySQL测试库；`-Redis` 增加共享准入和预扣恢复测试；
+`-RabbitMQ` 增加真实发布确认/故障恢复检查并要求同时指定 `-Integration`。
+测试只创建和删除随机测试库，不复用业务表；中间件地址与密码需按本机环境配置。
+
+```powershell
+./deploy/tests/run-regression.ps1 -Integration -Redis -RabbitMQ `
+  -MySqlBase 'jdbc:mysql://127.0.0.1:13306/' -RedisPort 16379 -RabbitMqPort 5672 `
+  -JdkHome '你的JDK17目录'
+```
+
+MySQL凭证从现有Windows环境读取。RabbitMQ测试默认连接本地guest账号，需使用允许guest本地连接的
+独立测试Broker；不要将它指向生产环境。应用、测试和迁移变更后重新打包再更新容器。
+
 ## Outbox 人工核对与重放
 
 自动发布默认每轮最多尝试 20 次或持续 24 小时。损坏载荷、Broker 认证失败立即进入

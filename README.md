@@ -1,6 +1,6 @@
 # 分布式票务交易平台
 
-基于 **Spring Boot / Spring Cloud** 的活动票务交易后端，覆盖从管理员创建活动、准备库存和发布，到用户购票、模拟付款、库存确认及电子票生成的完整流程。
+基于 **Spring Boot / Spring Cloud** 的活动票务交易平台，覆盖管理员创建活动、准备库存和发布，以及用户选座、同步或异步购票、模拟付款和电子票生成。提供轻量购票展示页与完整 API。
 
 项目拆分为 **6 个独立微服务、4 个公共模块、5 个业务数据库**。围绕跨服务交易，实现了可靠消息、最终一致性、缓存与限流、热点库存保护、故障隔离、分布式追踪和容器部署。
 
@@ -11,8 +11,10 @@
 | 用户与认证 | 注册、登录、刷新凭证、退出登录；普通用户与管理员权限；JWT 签名及 Redis 会话校验 |
 | 活动管理 | 创建包含场次和票档的完整草稿，后台初始化库存，查询准备进度、按原参数重新准备、发布活动 |
 | 活动查询 | 已发布活动分页、详情、场次和票档查询；Redis 展示缓存及热点重建保护 |
-| 订单与限购 | 购票规则及金额预览、创建订单、按编号查询本人订单；价格快照、购买幂等键、同用户同场次累计限购 |
-| 库存管理 | 初始化、预留、确认售出、释放及事实查询；条件更新防止超卖，重复请求核对原参数 |
+| 订单与限购 | 同步建单、异步受理与结果查询；价格/规则/座位快照、购买幂等键、单场累计限购及活动不同场次数限购 |
+| 库存管理 | Redis Lua 前置预扣、持久化准入账本、取消墓碑、代次重建；MySQL 条件更新保留最终数量护栏 |
+| 规则管理 | Drools 执行购票规则；规则参数草稿、版本发布、历史查询和新版本回滚，已受理请求沿用原快照 |
+| 选座与展示 | 草稿配置不可变区域网格、座位预扣/确认/释放、座位电子票；游标列表、视窗加载、版本增量和虚拟渲染 |
 | 模拟支付 | 从原订单创建支付单、查询本人支付单、模拟付款成功；付款事实核对及迟到付款全额模拟冲正 |
 | 电子票 | 完成库存确认后生成唯一电子票，查询本人订单的票券，重复履约不重复出票 |
 | 异常恢复 | 未付款超时关闭、库存释放、临时故障重试、响应丢失核对、宕机后任务接管及矛盾事实人工核对标记 |
@@ -41,6 +43,8 @@ flowchart LR
     Event -->|HTTP 初始化库存| Inventory
     Payment -->|Outbox 发布| MQ[RabbitMQ]
     MQ -->|付款成功事件| Order
+    Order -->|受理与建单 Outbox| MQ
+    MQ -->|购票受理事件| Order
 
     Nacos[Nacos 注册发现与配置] -.-> Gateway
     Nacos -.-> Business
@@ -66,8 +70,8 @@ flowchart LR
 ### 用户购票
 
 1. 用户登录，浏览已发布活动和票档。
-2. Order 通过 HTTP 查询 Event 的购票规则，校验销售时间、购买数量和累计限购。
-3. Order 本地事务保存订单、价格快照及额度占用，再调用 Inventory 预留库存。
+2. Order 通过 HTTP 查询 Event 的版本化购票规则，检查售票时间和每单数量，再申请 Redis 数量/座位预扣。Inventory 保存意图后才返回准入成功。
+3. 同步入口直接创建正式订单；异步入口原子保存受理和建单 Outbox，返回 `202`，MQ 触发正式建单。订单、规则/价格/座位快照和累计额度在同一本地事务保存，再由恢复流程完成 Inventory 正式预留。
 4. 用户从原订单发起支付，Payment 创建或返回已有支付单。
 5. 模拟付款成功时，Payment 在同一事务中保存付款事实和 Outbox 事件。
 6. 发送任务将事件投递到 RabbitMQ；Order 消费后回查 Payment 的付款事实。
@@ -82,6 +86,8 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 
 未付款到期时进入关闭流程，释放库存并归还购买额度；库存已释放后出现成功付款时执行模拟冲正。永久事实冲突保存为 `REVIEW_REQUIRED`，供人工核对。
 
+异步受理状态独立于订单：`ACCEPTED → CREATED`，失败时为 `CANCELLING → REJECTED`。`CREATED` 只表示订单已经保存，仍需查询正式订单；预扣、受理和付款成功均不能直接当作出票成功。
+
 ## 关键技术方案
 
 | 要解决的问题 | 实现方案 |
@@ -92,7 +98,8 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | 付款事件可靠传递 | RabbitMQ + Outbox，Confirm / Return 检查、消费幂等、延迟重试及死信；发布失败预算、人工核对与审计重放，转发失败共享退避 |
 | 热点查询与缓存重建竞争 | 展示缓存、空结果短缓存、TTL 抖动、Redis 重建锁、随机令牌校验、提交后版本失效及受控回源 |
 | 入口突发请求 | WebFlux 响应式 Redis Lua 令牌桶，按全局及用户 / IP 限流；仅接受可信代理规范化的客户端地址 |
-| 热点库存行竞争 | 事务前申请 Redis 按票档共享的并发额度，满额返回 `STOCK_BUSY`；MySQL 条件更新及事务保证库存正确 |
+| 热点库存行竞争 | Redis Lua 原子检查数量及所选座位，未命中直接拒绝；成功意图持久化，MySQL 保留条件更新；代次和取消墓碑防止旧请求重新占票 |
+| 抢票排队与规则变化 | 独立建单 Outbox / MQ、受理查询、持久化重试和审计重放；Drools 判断规则，数据库事务串行占用/归还累计额度 |
 | 下游故障扩散 | Resilience4j 熔断、并发隔离、HTTP 超时及故障分类；写请求由业务流程核对和重试 |
 | 请求和后台任务难以排查 | Micrometer Tracing + OpenTelemetry + Tempo，持久化并恢复异步追踪上下文，关联 HTTP、MQ 和恢复任务 |
 | 服务故障和业务积压不可见 | Prometheus 指标、Grafana 11 个面板和 12 条告警规则，覆盖服务健康、恢复积压、人工核对、消息重投和采样异常 |
@@ -114,6 +121,7 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | 缓存与并发控制 | Redis 7.4、Lua |
 | 消息 | RabbitMQ 4.3.6、Spring AMQP、Outbox |
 | 调用保护 | Resilience4j 2.4.0 |
+| 业务规则 | Drools 10.1.0、DRL、不可变参数版本与订单快照 |
 | 追踪与监控 | Micrometer、OpenTelemetry、Tempo、Prometheus、Grafana |
 | 部署与接口调试 | Docker Compose、PowerShell / CMD 启动入口、OpenAPI / Apifox |
 
@@ -134,14 +142,14 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | `ticket-resilience` | 不独立启动 | HTTP 熔断与并发隔离组件 |
 | `ticket-observability` | 不独立启动 | 追踪上下文、异步 Span 和工作流指标 |
 
-五个独立业务库共 **15 张业务表**，另有各库的 Flyway 迁移历史表：
+五个独立业务库共 **26 张业务表**，另有各库的 Flyway 迁移历史表：
 
 | 数据库 | 业务表数量 | 数据所有权 |
 | --- | --- | --- |
 | `ticket_auth` | 1 | 用户 |
-| `ticket_event` | 3 | 活动、场次、票档及准备进度 |
-| `ticket_order` | 5 | 订单、订单项、电子票、累计限购及消费记录 |
-| `ticket_inventory` | 2 | 库存及预留记录 |
+| `ticket_event` | 5 | 活动、场次、票档、规则版本及座位布局 |
+| `ticket_order` | 11 | 订单、快照、票券、累计额度、消费记录、受理、建单Outbox及重放审计 |
+| `ticket_inventory` | 5 | 库存、正式预留、准入账本、动态座位及座位绑定 |
 | `ticket_payment` | 4 | 支付、模拟冲正、Outbox 事件及人工重放审计 |
 
 数据库结构由各业务服务 `src/main/resources/db/migration/` 下的 Flyway SQL 管理。
@@ -178,6 +186,7 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 | 入口 | 本地地址 |
 | --- | --- |
 | 业务 API 网关 | http://localhost:18060 |
+| 购票演示页 | http://localhost:18060/ticket-demo/index.html |
 | Nacos 控制台 | http://localhost:18080 |
 | RabbitMQ 管理页面 | http://localhost:15680 |
 | Grafana | http://localhost:3002 |
@@ -199,12 +208,12 @@ STOCK_PENDING → PENDING_PAYMENT → PAYMENT_CONFIRMING → PAID → COMPLETED
 
 ## API 与演示
 
-[Apifox 使用指南](docs/apifox/README.md) 提供 **22 个公开接口、13 个内部接口**的 OpenAPI 契约，以及登录凭证、活动、订单和支付编号的变量提取脚本。日常交易调试导入公开接口，并将网关环境地址设置为 `http://localhost:18060`。
+[Apifox 使用指南](docs/apifox/README.md) 提供 **35 个公开接口、17 个内部接口**的 OpenAPI 3.0.3 契约，以及登录、活动、订单、受理和支付变量提取脚本。日常调试导入公开接口，网关环境地址为 `http://localhost:18060`；仓库文件更新后须重新导入 Apifox。
 
 推荐演示顺序：管理员创建草稿 → 等待库存准备 → 发布 → 用户注册登录 → 浏览活动 → 幂等下单 → 模拟付款 → 等待订单完成 → 查询电子票 → 退出登录。
 
 ## 项目范围
 
-当前功能通过 API 演示，支付与冲正为模拟实现；尚无业务前端和入场核验。活动管理支持创建、准备和发布，未提供已发布活动编辑、下架或库存调整。
+提供用户购票演示页，管理员仍通过 API 操作；支付与冲正为模拟实现，尚无入场核验和完整管理后台。活动管理支持创建、准备和发布，未提供已发布活动编辑、下架或库存调整。单票档布局最多20000座位，单次选座最多100席，还受已配置的业务限购限制。
 
-库存数量由 MySQL 维护，Redis 用于缓存、会话、限流及票档并发准入。监控告警可在本地页面查看；Redis 库存预扣账本、库存分段和外部告警通知渠道未实现。默认部署仍是单实例基础设施；可选 HA 拓扑提供多节点切换演练，生产部署还需跨主机故障域、TLS、最小权限账号、外部负载均衡及异地备份。
+Redis 预扣与 MySQL 是可恢复的最终一致性，两者数量不要求时刻相同。已成功受理的意图必须落库；Redis 丢失时按最终库存减去尚未落实的预扣重建。MySQL 保留数量及座位护栏，未实现库存分段和外部告警通知渠道。默认部署仍是单实例基础设施；可选 HA 拓扑用于节点切换演练，生产部署还需跨主机故障域、TLS、最小权限账号、外部负载均衡及异地备份。

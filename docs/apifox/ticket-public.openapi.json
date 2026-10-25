@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "分布式票务交易平台 公开API",
-    "version": "2.0.0",
-    "description": "当前项目公开HTTP契约，全部请求经过Gateway。默认Docker网关18060，IDEA开发网关8060。身份来自Bearer JWT及Redis会话，不接收正文userId。活动展示缓存、网关限流、熔断隔离及读取故障切换已接入。Docker默认启用RabbitMQ付款通知；MQ和Outbox不新增公开HTTP接口。202或支付SUCCESS不表示已经出票，查询订单至COMPLETED。模拟支付需启用PAYMENT_SIMULATION_ENABLED。时间为东八区LocalDateTime，金额为人民币BigDecimal。网关传输错误可能使用框架JSON，不保证业务Result格式。"
+    "version": "3.0.0",
+    "description": "公开HTTP契约：Gateway默认18060。新增Redis预扣、Drools版本化规则、跨场次限购、异步受理与选座。异步202只表示受理与Outbox已持久化，查询受理到CREATED后仍需查询订单到PENDING_PAYMENT再付款，最终COMPLETED才代表出票。选座和普通票共用订单接口。用户身份来自JWT，内部接口不经过网关。"
   },
   "servers": [
     {
@@ -38,6 +38,15 @@
     },
     {
       "name": "05 模拟支付"
+    },
+    {
+      "name": "07 购票规则"
+    },
+    {
+      "name": "08 异步购票"
+    },
+    {
+      "name": "09 选座"
     }
   ],
   "paths": {
@@ -1878,7 +1887,7 @@
         ],
         "summary": "创建或返回原订单",
         "operationId": "createOrder",
-        "description": "当前用户来自Token，不接受正文userId。200也可能返回CREATE_FAILED等明确业务状态，必须检查data.status。202为STOCK_PENDING或CLOSING；超时不能推断订单未创建，保持原幂等键和参数查询/重试。 热点库存准入暂满或远程结果不确定时，订单可能保持STOCK_PENDING，由后台使用原请求恢复。不要更换幂等键；公开订单接口不直接返回库存内部的STOCK_BUSY。写请求不会由网关自动换实例重发。",
+        "description": "同步建单入口。开启预扣时先获得持久化Redis准入，再在本地事务中创建正式订单、占累计额度及保存规则/座位快照，然后调用Inventory正式预留。同期异步入口共用用户幂等键；相同请求返回原订单，修改座位、票档或数量409。预扣失败可能直接409/503，超时保留原请求重试。",
         "responses": {
           "200": {
             "description": "成功",
@@ -3162,6 +3171,1868 @@
           }
         ]
       }
+    },
+    "/api/events/{eventId}/sessions/page": {
+      "get": {
+        "tags": [
+          "02 活动查询"
+        ],
+        "summary": "游标分页查询场次摘要",
+        "operationId": "v3_get__api_events__eventId__sessions_page",
+        "description": "每页最多100条，仅标准首页缓存。hasMore=true时沿用nextCursor继续，不返回整棵场次及票档数据。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_events__eventId__sessions_page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/events/{eventId}/sessions/{sessionId}/ticket-tiers/page": {
+      "get": {
+        "tags": [
+          "02 活动查询"
+        ],
+        "summary": "按场次游标加载票档",
+        "operationId": "v3_get__api_events__eventId__sessions__sessionId__ticket_tiers_page",
+        "description": "",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "sessionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_events__eventId__sessions__sessionId__ticket_tiers_page"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/admin/events/{eventId}/purchase-policies": {
+      "post": {
+        "tags": [
+          "07 购票规则"
+        ],
+        "summary": "创建购票规则草稿版本",
+        "operationId": "v3_post__api_admin_events__eventId__purchase_policies",
+        "description": "仅管理员。maxSessions限制每个用户在整个活动占用的不同场次数，maxPerOrder限制每单数量。单场累计票数仍使用场次purchaseLimit。草稿暂不生效。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_admin_events__eventId__purchase_policies"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "maxSessions": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "maxPerOrder": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 1,
+                    "maximum": 1000
+                  },
+                  "note": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "maxSessions",
+                  "maxPerOrder",
+                  "note"
+                ]
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "07 购票规则"
+        ],
+        "summary": "查看最近100个规则版本",
+        "operationId": "v3_get__api_admin_events__eventId__purchase_policies",
+        "description": "",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_admin_events__eventId__purchase_policies"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/events/{eventId}/purchase-policies/{version}/publish": {
+      "post": {
+        "tags": [
+          "07 购票规则"
+        ],
+        "summary": "发布规则草稿版本",
+        "operationId": "v3_post__api_admin_events__eventId__purchase_policies__version__publish",
+        "description": "原子切换当前规则。已发布版本不能再次激活覆盖；历史订单和受理保留原快照。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_admin_events__eventId__purchase_policies__version__publish"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/events/{eventId}/purchase-policies/{version}/rollback": {
+      "post": {
+        "tags": [
+          "07 购票规则"
+        ],
+        "summary": "回滚为新的规则版本",
+        "operationId": "v3_post__api_admin_events__eventId__purchase_policies__version__rollback",
+        "description": "复制指定已发布版本为新的发布版本，保留完整历史。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_admin_events__eventId__purchase_policies__version__rollback"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/admin/events/{eventId}/ticket-tiers/{tierId}/seat-layout": {
+      "post": {
+        "tags": [
+          "09 选座"
+        ],
+        "summary": "为草稿票档配置不可变座位布局",
+        "operationId": "v3_post__api_admin_events__eventId__ticket_tiers__tierId__seat_layout",
+        "description": "仅管理员，活动必须是DRAFT。座位总数须等于plannedQuantity且不超过20000。区域代码区分大小写。相同布局幂等，变更布局409。配置后票档重新进入PENDING，等库存与座位及Redis账本准备READY后才允许发布。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "tierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_admin_events__eventId__ticket_tiers__tierId__seat_layout"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "regions": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/SeatRegion"
+                    },
+                    "minItems": 1,
+                    "maxItems": 20
+                  }
+                },
+                "required": [
+                  "regions"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/events/{eventId}/ticket-tiers/{tierId}/seat-layout": {
+      "get": {
+        "tags": [
+          "09 选座"
+        ],
+        "summary": "查询已发布票档的区域网格元数据",
+        "operationId": "v3_get__api_events__eventId__ticket_tiers__tierId__seat_layout",
+        "description": "仅返回区域尺寸及布局摘要，不传输全部座位。非选座票档404。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "tierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_events__eventId__ticket_tiers__tierId__seat_layout"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/orders/ticket-tiers/{tierId}/seats": {
+      "get": {
+        "tags": [
+          "09 选座"
+        ],
+        "summary": "分页读取座位视窗与版本增量",
+        "operationId": "v3_get__api_orders_ticket_tiers__tierId__seats",
+        "description": "首次since=0、through=0、after=0。响应hasMore时固定原since及返回version作为through，使用nextAfter继续；本批取完才把since推进到version并令through/after为0。视窗变化应重置since=0。状态只用于提示，最终以预扣结果为准。",
+        "parameters": [
+          {
+            "name": "tierId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "region",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,20}$"
+            }
+          },
+          {
+            "name": "rowStart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "rowCount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 20
+            }
+          },
+          {
+            "name": "columnStart",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 500
+            }
+          },
+          {
+            "name": "columnCount",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 50
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "through",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_orders_ticket_tiers__tierId__seats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/requests": {
+      "post": {
+        "tags": [
+          "08 异步购票"
+        ],
+        "summary": "异步受理购票请求",
+        "operationId": "v3_post__api_orders_requests",
+        "description": "需同时启用TICKET_MQ_ENABLED和TICKET_STOCK_ADMISSION_ENABLED。先预扣并持久化意图，再原子保存受理和Order Outbox。202不代表正式订单已创建。保持原幂等键、座位、票档和数量，查询受理结果。",
+        "parameters": [],
+        "responses": {
+          "202": {
+            "description": "已持久化受理，尚未购票成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_orders_requests"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OrderCreateDTO"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/requests/{requestId}": {
+      "get": {
+        "tags": [
+          "08 异步购票"
+        ],
+        "summary": "查询本人异步购票受理结果",
+        "operationId": "v3_get__api_orders_requests__requestId_",
+        "description": "他人受理统一404。CREATED表示本地订单已保存；继续按orderNo查询正式订单库存确认状态。REJECTED表示失败取消步骤已完成。",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_orders_requests__requestId_"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/admin/purchase-outbox/review": {
+      "get": {
+        "tags": [
+          "08 异步购票"
+        ],
+        "summary": "管理员查看待核对建单事件",
+        "operationId": "v3_get__api_orders_admin_purchase_outbox_review",
+        "description": "仅管理员。最多100条，发布失败达到20次进入REVIEW_REQUIRED。核对Broker路由和受理事实后重放。",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_get__api_orders_admin_purchase_outbox_review"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/orders/admin/purchase-outbox/{eventId}/replay": {
+      "post": {
+        "tags": [
+          "08 异步购票"
+        ],
+        "summary": "管理员审计重放原建单事件",
+        "operationId": "v3_post__api_orders_admin_purchase_outbox__eventId__replay",
+        "description": "仅管理员。只允许REVIEW_REQUIRED事件，保留原事件ID及受理ID，重置单轮发布预算，审计记录操作人和原因。",
+        "parameters": [
+          {
+            "name": "eventId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Resultv3_post__api_orders_admin_purchase_outbox__eventId__replay"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "错误，核对HTTP状态和业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "reason"
+                ]
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4335,6 +6206,17 @@
             "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
             "example": "2027-06-01T10:00:00"
+          },
+          "seatIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ruleVersion": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
           }
         },
         "required": [
@@ -4372,6 +6254,17 @@
             "description": "相同业务重试保持同键和全部参数；新购买才使用新键",
             "pattern": "^[A-Za-z0-9_-]{1,64}$",
             "example": "demo_buy_001"
+          },
+          "seatIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]{1,20}:[1-9][0-9]{0,2}:[1-9][0-9]{0,2}$"
+            },
+            "uniqueItems": true,
+            "maxItems": 100,
+            "default": [],
+            "description": "选座票档必须传入且数量等于quantity；普通票省略或传空。服务端排序后进行幂等比较。"
           }
         },
         "required": [
@@ -4601,6 +6494,11 @@
             "description": "东八区LocalDateTime，无时区后缀，最多毫秒；不是UTC时间戳",
             "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,3})?$",
             "example": "2027-06-01T10:00:00"
+          },
+          "seatId": {
+            "type": "string",
+            "nullable": true,
+            "description": "普通票为空；选座票为原座位标识"
           }
         },
         "required": [
@@ -4744,6 +6642,687 @@
         "type": "object",
         "additionalProperties": true,
         "description": "网关网络故障或读取总预算超时的框架错误JSON；字段由框架决定，不保证code/data/traceId等业务Result字段。按HTTP状态判断传输失败。"
+      },
+      "SeatRegion": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,20}$"
+          },
+          "rows": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "columns": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 500
+          }
+        },
+        "required": [
+          "code",
+          "rows",
+          "columns"
+        ]
+      },
+      "SeatLayout": {
+        "type": "object",
+        "properties": {
+          "ticketTierId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "sessionId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "layoutHash": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "regions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SeatRegion"
+            },
+            "minItems": 1,
+            "maxItems": 20
+          }
+        },
+        "required": [
+          "ticketTierId",
+          "sessionId",
+          "layoutHash",
+          "regions"
+        ]
+      },
+      "SeatChanges": {
+        "type": "object",
+        "properties": {
+          "records": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "seatId": {
+                  "type": "string"
+                },
+                "ordinal": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 1
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "AVAILABLE",
+                    "HELD",
+                    "RESERVED",
+                    "SOLD"
+                  ]
+                },
+                "version": {
+                  "type": "integer",
+                  "format": "int64",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "seatId",
+                "ordinal",
+                "status",
+                "version"
+              ]
+            }
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "nextAfter": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "hasMore": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "records",
+          "version",
+          "nextAfter",
+          "hasMore"
+        ]
+      },
+      "Resultv3_get__api_events__eventId__sessions_page": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "integer",
+                      "format": "int64",
+                      "minimum": 1
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "venueName": {
+                      "type": "string"
+                    },
+                    "startTime": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "endTime": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "venueName",
+                    "startTime",
+                    "endTime"
+                  ]
+                }
+              },
+              "nextCursor": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "hasMore": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "records",
+              "nextCursor",
+              "hasMore"
+            ]
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__api_events__eventId__sessions__sessionId__ticket_tiers_page": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "records": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/TicketTierVO"
+                }
+              },
+              "nextCursor": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "hasMore": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "records",
+              "nextCursor",
+              "hasMore"
+            ]
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "PurchasePolicy": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "version": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "maxSessions": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "maxPerOrder": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "PUBLISHED"
+            ]
+          },
+          "note": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventId",
+          "version",
+          "maxSessions",
+          "maxPerOrder",
+          "status",
+          "note"
+        ]
+      },
+      "Resultv3_post__api_admin_events__eventId__purchase_policies": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchasePolicy"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Result100": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchasePolicy"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__api_admin_events__eventId__purchase_policies": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchasePolicy"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__api_admin_events__eventId__purchase_policies__version__publish": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchasePolicy"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__api_admin_events__eventId__purchase_policies__version__rollback": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchasePolicy"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__api_admin_events__eventId__ticket_tiers__tierId__seat_layout": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatLayout"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__api_events__eventId__ticket_tiers__tierId__seat_layout": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatLayout"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__api_orders_ticket_tiers__tierId__seats": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/SeatChanges"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "PurchaseAcceptance": {
+        "type": "object",
+        "properties": {
+          "requestId": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "ACCEPTED",
+              "CANCELLING",
+              "CREATED",
+              "REJECTED",
+              "REVIEW_REQUIRED"
+            ]
+          },
+          "orderNo": {
+            "type": "string",
+            "nullable": true
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "message": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "requestId",
+          "status",
+          "orderNo",
+          "expiresAt",
+          "message"
+        ]
+      },
+      "Resultv3_post__api_orders_requests": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchaseAcceptance"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_get__api_orders_requests__requestId_": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/PurchaseAcceptance"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "PurchaseOutboxEvent": {
+        "type": "object",
+        "properties": {
+          "eventId": {
+            "type": "string"
+          },
+          "requestId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "PUBLISHING",
+              "PUBLISHED",
+              "REVIEW_REQUIRED"
+            ]
+          },
+          "attemptCount": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0
+          },
+          "leaseToken": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "eventId",
+          "requestId",
+          "status",
+          "attemptCount",
+          "leaseToken"
+        ]
+      },
+      "Resultv3_get__api_orders_admin_purchase_outbox_review": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PurchaseOutboxEvent"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "Resultv3_post__api_orders_admin_purchase_outbox__eventId__replay": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "OK"
+            ]
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "nullable": true
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
       }
     },
     "securitySchemes": {

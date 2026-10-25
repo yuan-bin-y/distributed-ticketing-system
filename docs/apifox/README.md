@@ -1,17 +1,74 @@
 # Apifox 导入与购票调试
 
-这里提供当前项目的静态 OpenAPI 3.0.3 文档，文档版本为 `2.0.0`。包含活动、库存、订单、模拟支付、电子票及认证接口的请求约束、响应模型、状态码和认证方式。
+## 新增异步下单、规则与选座
+
+同步普通票流程仍可使用下文原步骤。新增功能也可直接通过网关的
+`/ticket-demo/index.html` 演示：用户登录、选场、选座、异步下单、模拟付款和查询座位电子票。
+
+### 管理员准备选座活动
+
+1. 创建草稿，记住 `eventId`、`ticketTierId` 及该票档 `plannedQuantity`。
+2. 草稿发布前配置布局：`POST /api/admin/events/{eventId}/ticket-tiers/{tierId}/seat-layout`。
+   例如计划库存10张，正文为 `{"regions":[{"code":"A","rows":2,"columns":5}]}`。
+   座位数必须与计划库存相等，最多20000席；布局一经保存不能修改，同内容重试幂等。
+3. 配置后票档重新进入 `PENDING`。查询或触发原准备接口，等待所有票档为 `READY` 再发布。
+   这次READY同时包含动态座位和Redis预扣账本准备；不要在配置后直接跳过准备检查。
+4. 可配置活动级规则：`POST /api/admin/events/{eventId}/purchase-policies`，正文例如
+   `{"maxSessions":2,"maxPerOrder":2,"note":"每人最多两个场次，每单最多两张"}`，
+   再 `POST /api/admin/events/{eventId}/purchase-policies/{version}/publish`。
+   单场累计限购仍使用草稿场次的 `purchaseLimit`。
+5. 发布版本不能改写；`/{version}/rollback` 会复制为新的发布版本。已受理和已创建订单使用原规则快照。
+
+### 用户异步购票
+
+```json
+{
+  "ticketTierId": 1,
+  "quantity": 2,
+  "idempotencyKey": "purchase_001",
+  "seatIds": ["A:1:1", "A:1:2"]
+}
+```
+
+把真实票档ID代入，发送至 `POST /api/orders/requests`。普通票省略 `seatIds` 或传空数组；
+选座票必须传入不重复且数量相等的座位。相同请求重试必须保留原键、票档、数量和座位。
+
+- `202 / ACCEPTED`：预扣意图、受理和建单Outbox已经保存，未承诺正式订单成功。
+- 查询 `GET /api/orders/requests/{requestId}`，可绑定 [order-request.post.js](scripts/order-request.post.js)
+  提取 `request_id`、`request_status`、`order_no`。
+- `CREATED`：按 `order_no` 查询正式订单，确认 `PENDING_PAYMENT` 后使用原发起支付步骤。
+- `CANCELLING`：失败补偿还在执行；`REJECTED`：取消预扣已确认完成。仍不能复用原键更改购买内容。
+- 支付成功后继续等正式订单 `COMPLETED`，查询电子票；选座电子票包含 `seatId`。
+
+异步入口要求 Order 和 Inventory 都启用 `TICKET_STOCK_ADMISSION_ENABLED=true`，并启用
+`TICKET_MQ_ENABLED=true`。完整Compose默认已开启。只用IDEA启动时需给相关服务设置相同开关。
+
+### 大量数据及座位增量
+
+- 场次按 `/api/events/{eventId}/sessions/page?after=0&limit=20` 加载，再按返回的 `nextCursor` 翻页。
+- 展开场次时使用 `/api/events/{eventId}/sessions/{sessionId}/ticket-tiers/page`，无需下载其他场次票档。
+- 静态布局接口只返回区域行列尺寸。动态座位按
+  `/api/orders/ticket-tiers/{tierId}/seats?region=A&rowStart=1&rowCount=10&columnStart=1&columnCount=20` 查询。
+- 首次 `since=0,through=0,after=0`；若 `hasMore=true`，保持原 `since`，把响应 `version` 作为
+  `through`，使用 `nextAfter` 继续。全部取完后才把 `since` 推进到该 `version`，下轮重置
+  `through=0,after=0`。改变视窗后从 `since=0` 重新加载。状态展示不能替代提交时的最终预扣。
+
+管理员建单Outbox治理：`GET /api/orders/admin/purchase-outbox/review`；修复故障并核对后，
+`POST /api/orders/admin/purchase-outbox/{eventId}/replay`，正文 `{"reason":"修复路由并核对原受理"}`。
+重放保留原事件和受理编号，写入操作人及原因审计；不能用它发起新的购买。
+
+这里提供当前项目的静态 OpenAPI 3.0.3 文档，文档版本为 `3.0.0`。包含版本化规则、Redis预扣、异步受理、选座，以及原有认证、活动、订单、模拟支付和电子票契约。
 
 ## 导入文件
 
 | 文件 | 接口数 | 地址与用途 |
 | --- | --- | --- |
-| [ticket-public.openapi.json](ticket-public.openapi.json) | 22 | 默认 Docker Gateway 18060，另提供 IDEA 8060；注册登录、活动管理、下单、模拟付款、票券与连通检查 |
-| [ticket-internal.openapi.json](ticket-internal.openapi.json) | 13 | 各服务直连，库存协作、购票规则、支付协作、付款通知和Auth公钥 |
+| [ticket-public.openapi.json](ticket-public.openapi.json) | 35 | 默认 Docker Gateway 18060，另提供 IDEA 8060；认证、活动、规则版本、同步/异步下单、选座、模拟付款及票券 |
+| [ticket-internal.openapi.json](ticket-internal.openapi.json) | 17 | 各服务直连；预扣、座位初始化/增量、库存协作、购票规则、支付协作、付款通知和Auth公钥 |
 
 先导入公开接口即可演示完整购票流程。已有 Apifox 项目需要重新导入本地 JSON 文件，检查并更新对应接口；修改仓库文件不会自动更新 Apifox 项目。导入后保留并核对自己的环境变量、认证配置和前后置脚本。[官方导入说明](https://docs.apifox.com/import-openapi-swagger)
 
-导入预览应看到 22 个公开接口，按 tags 分为认证、活动查询、管理员、订单、模拟支付和连通检查。请求示例中的 ID 是占位示例，发送前换成真实返回值；响应模型与示例不代表本机已存在对应数据。
+导入预览应看到35个公开接口。请求示例中的ID是占位，发送前换成真实返回值；响应模型与示例不代表本机已存在数据。
 
 内部文档建议导入独立项目或独立模块。各操作的 `servers` 标明 Docker 宿主机和 IDEA 地址，不能给全部内部接口统一使用一个服务端口。Order 的通知接口只列 IDEA 开发地址：完整 Docker 部署不映射其业务端口。内部路径不能通过网关调用。
 
