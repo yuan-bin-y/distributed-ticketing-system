@@ -1,0 +1,22 @@
+CREATE TABLE t_order_review_action (
+    id CHAR(32) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
+    order_id BIGINT NOT NULL,
+    request_key VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+    operator_id BIGINT NOT NULL,
+    action VARCHAR(24) NOT NULL,
+    reason VARCHAR(200) NOT NULL,
+    status VARCHAR(24) NOT NULL DEFAULT 'PENDING',
+    lease_token CHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL,
+    attempt_count INT NOT NULL DEFAULT 0,
+    next_attempt_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    facts_json JSON NULL,
+    result_status VARCHAR(32) NULL,
+    last_error VARCHAR(256) NULL,
+    created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uk_review_request(order_id, request_key),
+    KEY idx_review_due(status, next_attempt_at),
+    KEY idx_review_history(order_id, created_at),
+    CONSTRAINT chk_review_status CHECK(status IN ('PENDING','RUNNING','DONE','REJECTED','SUPERSEDED')),
+    CONSTRAINT chk_review_action CHECK(action IN ('RECHECK','RECONCILE','RESUME','CLOSE','REVERSE'))
+);

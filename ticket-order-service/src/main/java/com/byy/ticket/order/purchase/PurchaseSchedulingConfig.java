@@ -6,5 +6,6 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
     @Bean("purchaseRelayScheduler") public ThreadPoolTaskScheduler relay(){return scheduler("purchase-relay-",1);}
     @Bean("purchaseRecoveryScheduler") public ThreadPoolTaskScheduler recovery(){return scheduler("purchase-recovery-",1);}
     @Bean("taskScheduler") public ThreadPoolTaskScheduler business(){return scheduler("order-business-",2);}
+    @Bean("orderReviewScheduler") public ThreadPoolTaskScheduler review(){return scheduler("order-review-",1);}
     private ThreadPoolTaskScheduler scheduler(String name,int size){var scheduler=new ThreadPoolTaskScheduler();scheduler.setPoolSize(size);scheduler.setThreadNamePrefix(name);scheduler.setWaitForTasksToCompleteOnShutdown(true);scheduler.setAwaitTerminationSeconds(10);return scheduler;}
 }

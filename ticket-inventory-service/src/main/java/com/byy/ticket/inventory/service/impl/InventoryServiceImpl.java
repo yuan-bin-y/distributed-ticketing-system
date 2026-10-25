@@ -175,6 +175,16 @@ public class InventoryServiceImpl implements InventoryService {
         return toVO(reservation);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public StockReservationVO getReservationByOrder(String orderNo) {
+        if (orderNo == null || !orderNo.matches("[A-Za-z0-9_-]{1,64}"))
+            throw new IllegalArgumentException("订单关联编号无效");
+        var reservation = reservationMapper.selectByOrderId(orderNo);
+        if (reservation == null) throw new ResourceNotFoundException("库存预留记录不存在");
+        return toVO(reservation);
+    }
+
     /**
      * 只读查询票档库存，并转换为 TicketStockVO；票档库存尚未初始化时返回 404。
      */

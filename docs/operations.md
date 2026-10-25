@@ -271,3 +271,24 @@ $backup = ./deploy/ha/backup.ps1
 并在实际环境验证分区、整机故障、全停恢复、容量与RPO/RTO。
 当前可选HA栈不包含额外监控集群；日常部署的Prometheus/Grafana仍保留，
 跨环境接入时应另外配置采集目标。项目中的支付、冲正仍为模拟业务。
+# 订单人工核对
+
+管理员可通过 `GET /api/orders/admin/reviews?after=0&limit=20` 查询待核对订单，
+通过 `GET /api/orders/admin/reviews/{orderNo}` 查看订单快照、远程事实和最近50条处理记录。
+远程服务不可用时仍返回本地资料，并在 `factError` 中标记查询失败。
+
+提交 `POST /api/orders/admin/reviews/{orderNo}/actions`：
+
+```json
+{"idempotencyKey":"review-001","action":"RECONCILE","reason":"核实付款与原库存后恢复流程"}
+```
+
+`action` 支持 `RECHECK`（仅核对）、`RECONCILE`（按事实恢复）、`RESUME`、`CLOSE`、`REVERSE`。
+返回202只表示处理命令已保存；使用 `GET /api/orders/admin/reviews/actions/{actionId}` 查询结果。
+处理方向必须满足事实与原快照：已付款不能关闭，已售出不能直接释放，未到期未付款订单不能按到期关闭。
+未找到原预留时，只有核实预扣已取消才允许归还额度；已存在预留编号但远程记录缺失时保留核对。
+处理命令、操作人、原因、依据及恢复结果持久化；重复编号必须保持同一操作人和参数。
+远程暂时故障最多重试20次，之后命令为REJECTED，原订单仍保留待核对，可提交新的核对命令。
+正常租约60秒，宕机命令65秒后可接管，旧任务不能覆盖新处理进度。
+恢复结果可能是待支付、付款确认或关闭中；最终结果继续查询原订单。
+

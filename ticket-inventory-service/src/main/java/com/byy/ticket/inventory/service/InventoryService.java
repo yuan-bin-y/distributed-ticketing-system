@@ -24,6 +24,8 @@ public interface InventoryService {
      * 按预留编号读取记录和状态，不修改库存。
      */
     StockReservationVO getReservation(String reservationId);
+    /** 按稳定订单编号核对预留，供响应丢失或管理员恢复时找回原编号。 */
+    StockReservationVO getReservationByOrder(String orderNo);
     /**
      * 按票档 ID 查询库存计数，不访问活动或订单数据库。
      */

@@ -68,4 +68,10 @@ public class InternalStockReservationController {
     public Result<StockReservationVO> getReservation(@PathVariable String reservationId) {
         return Result.success(inventoryService.getReservation(reservationId));
     }
+
+    /** 只核对原预留事实，不创建、释放或确认库存。 */
+    @GetMapping("/by-order/{orderNo}")
+    public Result<StockReservationVO> byOrder(@PathVariable String orderNo) {
+        return Result.success(inventoryService.getReservationByOrder(orderNo));
+    }
 }

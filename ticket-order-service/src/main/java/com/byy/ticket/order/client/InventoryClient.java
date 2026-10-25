@@ -111,6 +111,14 @@ public class InventoryClient {
                 response -> reservationId.equals(response.reservationId()));
     }
 
+    /** 根据稳定订单编号找回原预留；404必须是服务端明确返回的不存在。 */
+    public StockReservationResponse getByOrder(String orderNo) {
+        if (orderNo == null || !orderNo.matches("[A-Za-z0-9_-]{1,64}"))
+            throw new IllegalArgumentException("订单关联编号无效");
+        return execute(restClient.get().uri("/internal/stock-reservations/by-order/{orderNo}", orderNo),
+                response -> orderNo.equals(response.orderId()));
+    }
+
     /**
      * 统一执行 HTTP 请求：携带 traceId、接收 JSON，并核对状态码、错误码和响应字段。
      * 400/404/409 必须匹配预期业务码，其他异常状态分别按不可用或无效响应处理。
