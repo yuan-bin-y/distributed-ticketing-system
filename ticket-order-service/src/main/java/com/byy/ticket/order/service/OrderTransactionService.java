@@ -1,18 +1,20 @@
 package com.byy.ticket.order.service;
 
-import com.byy.ticket.order.client.dto.TicketPurchaseRuleResponse;
 import com.byy.ticket.common.trace.PerformanceSpan;
 import com.byy.ticket.observability.TraceSupport;
+import com.byy.ticket.order.client.dto.TicketPurchaseRuleResponse;
 import com.byy.ticket.order.dto.order.OrderCreateDTO;
-import com.byy.ticket.order.mapper.OrderMapper;
-import com.byy.ticket.order.mapper.OrderItemMapper;
-import com.byy.ticket.order.mapper.PurchaseQuotaMapper;
 import com.byy.ticket.order.exception.OrderConflictException;
-import com.byy.ticket.order.model.TicketOrder;
+import com.byy.ticket.order.mapper.OrderItemMapper;
+import com.byy.ticket.order.mapper.OrderMapper;
+import com.byy.ticket.order.mapper.PurchaseQuotaMapper;
 import com.byy.ticket.order.model.OrderItem;
 import com.byy.ticket.order.model.OrderStatus;
+import com.byy.ticket.order.model.TicketOrder;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.UUID;
@@ -24,54 +26,105 @@ public class OrderTransactionService {
     private final OrderItemMapper items;
     private final PurchaseQuotaMapper quotas;
     private final TraceSupport traces;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.order.mapper.EventPurchaseQuotaMapper eventQuotas;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.order.rules.PurchaseRuleEngine rules;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.order.mapper.PurchaseRequestGateMapper requestGate;
+    private final com.byy.ticket.order.mapper.EventPurchaseQuotaMapper eventQuotas;
+    private final com.byy.ticket.order.rules.PurchaseRuleEngine rules;
+    private final com.byy.ticket.order.mapper.PurchaseRequestGateMapper requestGate;
 
     /** 注入属于订单库的订单、快照和购买额度Mapper。 */
-    public OrderTransactionService(OrderMapper orders, OrderItemMapper items, PurchaseQuotaMapper quotas, TraceSupport traces) {
+    public OrderTransactionService(
+            OrderMapper orders,
+            OrderItemMapper items,
+            PurchaseQuotaMapper quotas,
+            TraceSupport traces,
+            com.byy.ticket.order.mapper.EventPurchaseQuotaMapper eventQuotas,
+            com.byy.ticket.order.rules.PurchaseRuleEngine rules,
+            com.byy.ticket.order.mapper.PurchaseRequestGateMapper requestGate) {
         this.orders = orders;
         this.items = items;
         this.quotas = quotas;
         this.traces = traces;
+        this.eventQuotas = eventQuotas;
+        this.rules = rules;
+        this.requestGate = requestGate;
     }
 
     /** 原子保存订单、快照及累计额度；超过限购全部回滚，重复幂等键不再占额度。 */
     @Transactional
-    public TicketOrder create(Long userId, OrderCreateDTO request, TicketPurchaseRuleResponse rule,
-                              BigDecimal amount, LocalDateTime now, LocalDateTime expiresAt) {
-        return save(UUID.randomUUID().toString().replace("-", ""),userId,request,rule,amount,now,expiresAt);
+    public TicketOrder create(
+            Long userId,
+            OrderCreateDTO request,
+            TicketPurchaseRuleResponse rule,
+            BigDecimal amount,
+            LocalDateTime now,
+            LocalDateTime expiresAt) {
+        return save(
+                UUID.randomUUID().toString().replace("-", ""),
+                userId,
+                request,
+                rule,
+                amount,
+                now,
+                expiresAt);
     }
 
     /** 预扣与正式订单使用同一稳定编号；仍只包含本地 SQL，不发送网络请求。 */
     @Transactional
-    public TicketOrder createAccepted(String orderNo,Long userId,OrderCreateDTO request,TicketPurchaseRuleResponse rule,
-                                      BigDecimal amount,LocalDateTime now,LocalDateTime expiresAt){
-        return save(orderNo,userId,request,rule,amount,now,expiresAt);
+    public TicketOrder createAccepted(
+            String orderNo,
+            Long userId,
+            OrderCreateDTO request,
+            TicketPurchaseRuleResponse rule,
+            BigDecimal amount,
+            LocalDateTime now,
+            LocalDateTime expiresAt) {
+        return save(orderNo, userId, request, rule, amount, now, expiresAt);
     }
-    private TicketOrder save(String orderNo,Long userId,OrderCreateDTO request,TicketPurchaseRuleResponse rule,
-                            BigDecimal amount,LocalDateTime now,LocalDateTime expiresAt){
-        requestGate.lock(userId,request.idempotencyKey());
-        var existing=orders.selectByRequest(userId,request.idempotencyKey());
-        if(existing!=null){var item=items.selectByOrderId(existing.getId());
-            if(item==null||!request.ticketTierId().equals(item.getTicketTierId())||!request.quantity().equals(item.getQuantity())
-                ||!request.seatIds().equals(com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds())))throw new OrderConflictException("同一幂等键的购买参数不一致");
+
+    private TicketOrder save(
+            String orderNo,
+            Long userId,
+            OrderCreateDTO request,
+            TicketPurchaseRuleResponse rule,
+            BigDecimal amount,
+            LocalDateTime now,
+            LocalDateTime expiresAt) {
+        requestGate.lock(userId, request.idempotencyKey());
+        var existing = orders.selectByRequest(userId, request.idempotencyKey());
+        if (existing != null) {
+            var item = items.selectByOrderId(existing.getId());
+            if (item == null
+                    || !request.ticketTierId().equals(item.getTicketTierId())
+                    || !request.quantity().equals(item.getQuantity())
+                    || !request.seatIds()
+                            .equals(
+                                    com.byy.ticket.common.seat.SeatSelection.decode(
+                                            item.getSeatIds())))
+                throw new OrderConflictException("同一幂等键的购买参数不一致");
             return existing;
         }
-        eventQuotas.ensure(userId,rule.eventId());
-        int occupiedSessions=eventQuotas.lock(userId,rule.eventId());
-        eventQuotas.ensureSession(userId,rule.eventId(),rule.sessionId());
-        int activeOrders=eventQuotas.sessionOrders(userId,rule.eventId(),rule.sessionId());
-        quotas.ensureExists(userId,rule.sessionId());
-        long used=quotas.occupied(userId,rule.sessionId());
-        if(used>Integer.MAX_VALUE)throw new OrderConflictException("原购买额度超过当前规则范围");
-        rules.check(new com.byy.ticket.order.rules.PurchaseFacts(request.quantity(),(int)used,occupiedSessions,activeOrders>0,
-                rule.purchaseLimit(),rule.maxSessions(),rule.maxPerOrder(),now,rule.saleStartTime(),rule.saleEndTime()));
-        if(activeOrders==0&&eventQuotas.occupy(userId,rule.eventId(),rule.maxSessions())!=1)throw new OrderConflictException("活动场次数超过限购");
-        eventQuotas.addOrder(userId,rule.eventId(),rule.sessionId());
+        eventQuotas.ensure(userId, rule.eventId());
+        int occupiedSessions = eventQuotas.lock(userId, rule.eventId());
+        eventQuotas.ensureSession(userId, rule.eventId(), rule.sessionId());
+        int activeOrders = eventQuotas.sessionOrders(userId, rule.eventId(), rule.sessionId());
+        quotas.ensureExists(userId, rule.sessionId());
+        long used = quotas.occupied(userId, rule.sessionId());
+        if (used > Integer.MAX_VALUE) throw new OrderConflictException("原购买额度超过当前规则范围");
+        rules.check(
+                new com.byy.ticket.order.rules.PurchaseFacts(
+                        request.quantity(),
+                        (int) used,
+                        occupiedSessions,
+                        activeOrders > 0,
+                        rule.purchaseLimit(),
+                        rule.maxSessions(),
+                        rule.maxPerOrder(),
+                        now,
+                        rule.saleStartTime(),
+                        rule.saleEndTime()));
+        if (activeOrders == 0
+                && eventQuotas.occupy(userId, rule.eventId(), rule.maxSessions()) != 1)
+            throw new OrderConflictException("活动场次数超过限购");
+        eventQuotas.addOrder(userId, rule.eventId(), rule.sessionId());
         TicketOrder order = new TicketOrder();
         order.setOrderNo(orderNo);
         var context = traces.capture();
@@ -85,7 +138,7 @@ public class OrderTransactionService {
         order.setExpiresAt(expiresAt);
         order.setNextAttemptAt(now);
         order.setAttemptCount(0);
-        PerformanceSpan.measure("sql.order.insert",()->orders.insert(order));
+        PerformanceSpan.measure("sql.order.insert", () -> orders.insert(order));
         OrderItem item = new OrderItem();
         item.setOrderId(order.getId());
         item.setEventId(rule.eventId());
@@ -95,11 +148,23 @@ public class OrderTransactionService {
         item.setUnitPrice(rule.price());
         item.setQuantity(request.quantity());
         item.setSubtotalAmount(amount);
-        item.setRuleVersion(rule.ruleVersion());item.setPurchaseLimit(rule.purchaseLimit());item.setMaxSessions(rule.maxSessions());item.setMaxPerOrder(rule.maxPerOrder());
+        item.setRuleVersion(rule.ruleVersion());
+        item.setPurchaseLimit(rule.purchaseLimit());
+        item.setMaxSessions(rule.maxSessions());
+        item.setMaxPerOrder(rule.maxPerOrder());
         item.setSeatIds(com.byy.ticket.common.seat.SeatSelection.encode(request.seatIds()));
-        PerformanceSpan.measure("sql.item.insert",()->items.insert(item));
-        PerformanceSpan.measure("sql.quota.ensure",()->quotas.ensureExists(userId, rule.sessionId()));
-        if (PerformanceSpan.measure("sql.quota.occupy",()->quotas.occupy(userId, rule.sessionId(), request.quantity(), rule.purchaseLimit())) != 1) {
+        PerformanceSpan.measure("sql.item.insert", () -> items.insert(item));
+        PerformanceSpan.measure(
+                "sql.quota.ensure", () -> quotas.ensureExists(userId, rule.sessionId()));
+        if (PerformanceSpan.measure(
+                        "sql.quota.occupy",
+                        () ->
+                                quotas.occupy(
+                                        userId,
+                                        rule.sessionId(),
+                                        request.quantity(),
+                                        rule.purchaseLimit()))
+                != 1) {
             throw new OrderConflictException("该场次累计购买数量超过限购");
         }
         return order;
@@ -107,15 +172,25 @@ public class OrderTransactionService {
 
     /** 已明确创建失败或库存已释放才调用；终态、额度减法及归还标记一起提交。 */
     @Transactional
-    public int finishAndReleaseQuota(Long id, String token, String expected, OrderStatus target,
-                                     String reservationId, LocalDateTime now, String error) {
+    public int finishAndReleaseQuota(
+            Long id,
+            String token,
+            String expected,
+            OrderStatus target,
+            String reservationId,
+            LocalDateTime now,
+            String error) {
         if (target != OrderStatus.CREATE_FAILED && target != OrderStatus.CLOSED) {
             throw new IllegalArgumentException("当前终态不能归还购买额度");
         }
         TicketOrder order = orders.selectByIdForUpdate(id);
-        if (!matchesTask(order, token, expected)) { return 0; }
+        if (!matchesTask(order, token, expected)) {
+            return 0;
+        }
         int changed = orders.finish(id, token, expected, target.name(), reservationId, now, error);
-        if (changed != 1) { return 0; }
+        if (changed != 1) {
+            return 0;
+        }
         releaseQuota(order);
         return 1;
     }
@@ -124,29 +199,46 @@ public class OrderTransactionService {
     @Transactional
     public int finishReversalAndReleaseQuota(Long id, String token, String reversalNo) {
         TicketOrder order = orders.selectByIdForUpdate(id);
-        if (!matchesTask(order, token, OrderStatus.REVERSAL_PENDING.name())) { return 0; }
-        if (orders.finishReversal(id, token, reversalNo) != 1) { return 0; }
+        if (!matchesTask(order, token, OrderStatus.REVERSAL_PENDING.name())) {
+            return 0;
+        }
+        if (orders.finishReversal(id, token, reversalNo) != 1) {
+            return 0;
+        }
         releaseQuota(order);
         return 1;
     }
 
     /** 锁定后重新核对领取令牌和前置状态，旧工作线程不能释放新任务的额度。 */
     private boolean matchesTask(TicketOrder order, String token, String expected) {
-        return order != null && token != null && token.equals(order.getLeaseToken())
+        return order != null
+                && token != null
+                && token.equals(order.getLeaseToken())
                 && expected.equals(order.getStatus());
     }
 
     /** 订单行锁和归还标记保证一次；账目异常回滚终态，保留原任务继续核对。 */
     private void releaseQuota(TicketOrder order) {
-        if ("RELEASED".equals(order.getQuotaStatus())) { return; }
-        if (!"HELD".equals(order.getQuotaStatus())) { throw new IllegalStateException("订单额度状态异常"); }
+        if ("RELEASED".equals(order.getQuotaStatus())) {
+            return;
+        }
+        if (!"HELD".equals(order.getQuotaStatus())) {
+            throw new IllegalStateException("订单额度状态异常");
+        }
         OrderItem item = items.selectByOrderId(order.getId());
-        if(item==null)throw new IllegalStateException("购买快照缺失");
-        eventQuotas.lock(order.getUserId(),item.getEventId());
-        int active=eventQuotas.sessionOrders(order.getUserId(),item.getEventId(),item.getSessionId());
-        if(active<1||eventQuotas.removeOrder(order.getUserId(),item.getEventId(),item.getSessionId())!=1
-            ||(active==1&&eventQuotas.release(order.getUserId(),item.getEventId())!=1))throw new IllegalStateException("活动场次额度不一致");
-        if (item == null || quotas.release(order.getUserId(), item.getSessionId(), item.getQuantity()) != 1
+        if (item == null) throw new IllegalStateException("购买快照缺失");
+        eventQuotas.lock(order.getUserId(), item.getEventId());
+        int active =
+                eventQuotas.sessionOrders(
+                        order.getUserId(), item.getEventId(), item.getSessionId());
+        if (active < 1
+                || eventQuotas.removeOrder(
+                                order.getUserId(), item.getEventId(), item.getSessionId())
+                        != 1
+                || (active == 1 && eventQuotas.release(order.getUserId(), item.getEventId()) != 1))
+            throw new IllegalStateException("活动场次额度不一致");
+        if (item == null
+                || quotas.release(order.getUserId(), item.getSessionId(), item.getQuantity()) != 1
                 || orders.markQuotaReleased(order.getId()) != 1) {
             throw new IllegalStateException("购买额度记录不一致，停止终态提交");
         }

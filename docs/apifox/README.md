@@ -57,18 +57,18 @@
 `POST /api/orders/admin/purchase-outbox/{eventId}/replay`，正文 `{"reason":"修复路由并核对原受理"}`。
 重放保留原事件和受理编号，写入操作人及原因审计；不能用它发起新的购买。
 
-这里提供当前项目的静态 OpenAPI 3.0.3 文档，文档版本为 `3.0.0`。包含版本化规则、Redis预扣、异步受理、选座，以及原有认证、活动、订单、模拟支付和电子票契约。
+这里提供当前项目的静态 OpenAPI 3.0.3 文档，文档版本为 `3.1.0`。包含版本化规则、Redis预扣、异步受理、选座，以及原有认证、活动、订单、模拟支付和电子票契约。
 
 ## 导入文件
 
 | 文件 | 接口数 | 地址与用途 |
 | --- | --- | --- |
-| [ticket-public.openapi.json](ticket-public.openapi.json) | 35 | 默认 Docker Gateway 18060，另提供 IDEA 8060；认证、活动、规则版本、同步/异步下单、选座、模拟付款及票券 |
-| [ticket-internal.openapi.json](ticket-internal.openapi.json) | 17 | 各服务直连；预扣、座位初始化/增量、库存协作、购票规则、支付协作、付款通知和Auth公钥 |
+| [ticket-public.openapi.json](ticket-public.openapi.json) | 39 | 默认 Docker Gateway 18060，另提供 IDEA 8060；认证、活动、规则版本、同步/异步下单、选座、模拟付款及票券 |
+| [ticket-internal.openapi.json](ticket-internal.openapi.json) | 19 | 各服务直连；预扣、座位初始化/增量、库存协作、购票规则、支付协作、付款通知和Auth公钥 |
 
 先导入公开接口即可演示完整购票流程。已有 Apifox 项目需要重新导入本地 JSON 文件，检查并更新对应接口；修改仓库文件不会自动更新 Apifox 项目。导入后保留并核对自己的环境变量、认证配置和前后置脚本。[官方导入说明](https://docs.apifox.com/import-openapi-swagger)
 
-导入预览应看到35个公开接口。请求示例中的ID是占位，发送前换成真实返回值；响应模型与示例不代表本机已存在数据。
+导入预览应看到39个公开接口。请求示例中的ID是占位，发送前换成真实返回值；响应模型与示例不代表本机已存在数据。
 
 内部文档建议导入独立项目或独立模块。各操作的 `servers` 标明 Docker 宿主机和 IDEA 地址，不能给全部内部接口统一使用一个服务端口。Order 的通知接口只列 IDEA 开发地址：完整 Docker 部署不映射其业务端口。内部路径不能通过网关调用。
 
@@ -177,3 +177,13 @@ RabbitMQ 与 Outbox 使用内部事件传递付款成功线索，未新增公开
 请求支持可选 W3C `traceparent` / `tracestate`，一般留空，由服务自动生成上下文。启用追踪时真实 Span 的 Trace ID 优先，不能仅靠自填 `X-Trace-Id` 指定整条链路。从响应头 `X-Trace-Id` 或业务 Result 的 `traceId` 取得编号，在 Grafana Tempo 中查询。
 
 文件是静态接口文档，不会随代码修改自动刷新，也没有提供 `/v3/api-docs` 运行端点。
+
+## 订单人工核对
+
+仅管理员Token可访问。先用 `GET /api/orders/admin/reviews` 分页查看待核对订单，再用 `GET /api/orders/admin/reviews/{orderNo}` 查看本地快照、远程付款/预留事实和最近50次审计。依赖故障时仍可看到本地信息及factError。
+
+向 `POST /api/orders/admin/reviews/{orderNo}/actions` 提交例如 `{"idempotencyKey":"review_001","action":"RECONCILE","reason":"依赖已恢复，核对原付款和预留"}`。返回202后用 `GET /api/orders/admin/reviews/actions/{actionId}` 查看PENDING/RUNNING/DONE/REJECTED/SUPERSEDED；id取提交响应的data.id。同编号重试须保留原操作人、动作和原因。DONE表示处置命令完成，继续查询订单最终状态。
+
+RECHECK只记录事实；RECONCILE按事实恢复；RESUME恢复待支付或履约；CLOSE只允许核实未付款且到期的订单；REVERSE需要释放库存或已有冲正事实。不提供任意强制改状态，拒绝时保留订单与审计供继续核对。
+
+内部文档新增Order凭证保护的库存能力GET和按orderNo查询预留事实。探针不纳入交易API清单：业务端口的 `/livez` 和 `/readyz` 仅返回状态；管理端口的Actuator详情/指标仍不经过网关。

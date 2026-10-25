@@ -54,7 +54,7 @@ Set-Location 'E:\my project\distributed-ticketing-system'
 
 修改Java代码后执行不带SkipPackage的启动命令。它会重新打包并更新容器。镜像版本使用local，已有基础镜像会复用；缺失基础镜像时才下载。
 
-默认使用本机JDK17与Maven，其他电脑可以指定：
+默认使用本机JDK17与项目Wrapper，也可显式指定工具路径：
 
 ```powershell
 ./deploy/docker/start.ps1 -JdkHome 'D:\Java\jdk-17' -MavenCommand 'D:\maven\bin\mvn.cmd' -NacosHome 'D:\nacos'
@@ -150,6 +150,7 @@ Compose还默认开启 `TICKET_STOCK_ADMISSION_ENABLED=true`：Redis Lua先预�
 ### 从此前版本升级
 
 本次包含Event规则/布局、Inventory预扣/座位和Order跨场次额度/受理/座位快照迁移。
+新增库存历史预扣凭据归档表与订单人工处置审计表，由Flyway执行；保留原表和历史记录，勿手工删除已执行迁移。
 首次升级先执行 `停止项目.cmd`，保留数据卷，再执行 `更新并启动.cmd`。尤其不要混用新旧Order实例：
 额度回填期间所有Order写入都应停止。Flyway会回填原有效订单的活动场次额度，原订单与预留继续按原编号核对。
 不要编辑已经执行过的迁移文件或用删除卷来绕过校验。

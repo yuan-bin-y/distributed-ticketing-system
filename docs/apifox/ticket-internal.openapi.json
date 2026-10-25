@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "分布式票务交易平台 内部API",
-    "version": "3.0.0",
-    "description": "当前服务间HTTP协作契约，不经过Gateway。各操作servers分别标明Docker宿主机端口和IDEA端口，使用分方向服务凭证，用户JWT不能替代。Docker Order不映射宿主机端口；付款通知HTTP入口仅作为兼容方式，MQ模式无需手工调用。库存预留准入暂满返回503 STOCK_BUSY，应保持原订单编号和参数核对或重试；这不代表库存不足或整个服务故障。历史/internal/orders/stock-reservations被安全链拒绝，未列为可调用接口。调试内部写接口应使用独立数据。 新增Order库存预扣和取消、Event座位初始化及Order座位增量查询。Redis预扣有持久化意图，MySQL条件更新仍是最终库存护栏。HTTP超时不直接回补数量；取消墓碑与正式预留串行核对。"
+    "version": "3.1.0",
+    "description": "当前服务间HTTP协作契约，不经过Gateway。各操作servers分别标明Docker宿主机端口和IDEA端口，使用分方向服务凭证，用户JWT不能替代。Docker Order不映射宿主机端口；付款通知HTTP入口仅作为兼容方式，MQ模式无需手工调用。库存预留准入暂满返回503 STOCK_BUSY，应保持原订单编号和参数核对或重试；这不代表库存不足或整个服务故障。历史/internal/orders/stock-reservations被安全链拒绝，未列为可调用接口。调试内部写接口应使用独立数据。 新增Order库存预扣和取消、Event座位初始化及Order座位增量查询。Redis预扣有持久化意图，MySQL条件更新仍是最终库存护栏。HTTP超时不直接回补数量；取消墓碑与正式预留串行核对。 新增库存能力检查及按订单查询原预留事实。"
   },
   "servers": [
     {
@@ -2721,6 +2721,229 @@
           }
         ]
       }
+    },
+    "/internal/stock-reservations/by-order/{orderNo}": {
+      "get": {
+        "tags": [
+          "Inventory内部"
+        ],
+        "summary": "按原订单查询库存预留事实",
+        "operationId": "InventoryReservationByOrder",
+        "description": "Order核对预留事实",
+        "responses": {
+          "200": {
+            "description": "成功",
+            "headers": {
+              "X-Trace-Id": {
+                "description": "请求追踪标识",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResultStockReservationVO"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "参数、JSON或业务参数不符合要求",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "用户Token或服务凭证缺失/无效",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "身份没有对应权限",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "资源不存在、不可展示或不属于当前用户",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "幂等参数、业务状态、限购或库存冲突",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "存储繁忙或依赖服务不可用",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "security": [
+          {
+            "OrderInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
+    },
+    "/internal/inventory/capabilities": {
+      "get": {
+        "summary": "Order核对库存协议能力",
+        "tags": [
+          "Inventory内部"
+        ],
+        "operationId": "HardeningInventoryCapabilities",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardeningInventoryCapabilitiesResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OrderInventoryCredential": []
+          }
+        ],
+        "servers": [
+          {
+            "url": "http://localhost:18063",
+            "description": "Docker对应服务宿主机端口（默认）"
+          },
+          {
+            "url": "http://localhost:8063",
+            "description": "直连Inventory内部；Gateway不开放此接口（IDEA开发）"
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -3848,6 +4071,48 @@
           },
           "data": {
             "$ref": "#/components/schemas/SeatChanges"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "HardeningInventoryCapabilitiesResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "protocolVersion": {
+                "type": "integer",
+                "enum": [
+                  1
+                ]
+              },
+              "stockAdmission": {
+                "type": "boolean"
+              },
+              "selectedSeats": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "protocolVersion",
+              "stockAdmission",
+              "selectedSeats"
+            ]
           },
           "traceId": {
             "type": "string"

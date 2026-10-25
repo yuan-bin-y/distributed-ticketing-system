@@ -1,76 +1,214 @@
 package com.byy.ticket.inventory.config;
-import com.byy.ticket.security.service.*;
+
 import com.byy.ticket.common.result.Result;
+import com.byy.ticket.security.service.*;
+
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
-import java.io.IOException;
-import java.util.List;
+
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.*;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
-import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import tools.jackson.databind.ObjectMapper;
+
+import java.io.IOException;
+import java.util.List;
+
 /** 初始化只接受Event，库存交易只接受Order；其余入口默认拒绝。 */
 @Configuration
-@EnableConfigurationProperties({EventInventoryCredentialProperties.class,OrderInventoryCredentialProperties.class})
+@EnableConfigurationProperties({
+    EventInventoryCredentialProperties.class,
+    OrderInventoryCredentialProperties.class
+})
 public class InitializationSecurityConfig {
     /** 独立管理端口开放只读健康和指标；业务端口不公开Prometheus。 */
     @org.springframework.context.annotation.Bean
     @org.springframework.core.annotation.Order(0)
     public org.springframework.security.web.SecurityFilterChain managementSecurity(
             org.springframework.security.config.annotation.web.builders.HttpSecurity http,
-            @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
-        return http.securityMatcher(request -> (port>0 && request.getLocalPort()==port) || "/readyz".equals(request.getRequestURI()) || "/livez".equals(request.getRequestURI()))
-                .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
-                .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
-                        "/actuator/health","/actuator/health/**","/actuator/prometheus","/readyz","/livez").permitAll().anyRequest().denyAll()).build();
+            @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}")
+                    int port)
+            throws Exception {
+        return http.securityMatcher(
+                        request ->
+                                (port > 0 && request.getLocalPort() == port)
+                                        || "/readyz".equals(request.getRequestURI())
+                                        || "/livez".equals(request.getRequestURI()))
+                .csrf(c -> c.disable())
+                .httpBasic(c -> c.disable())
+                .formLogin(c -> c.disable())
+                .authorizeHttpRequests(
+                        a ->
+                                a.requestMatchers(
+                                                org.springframework.http.HttpMethod.GET,
+                                                "/actuator/health",
+                                                "/actuator/health/**",
+                                                "/actuator/prometheus",
+                                                "/readyz",
+                                                "/livez")
+                                        .permitAll()
+                                        .anyRequest()
+                                        .denyAll())
+                .build();
     }
-    @Bean EventInventoryCredential eventInventoryCredential(EventInventoryCredentialProperties properties)throws IOException{return new EventInventoryCredential(properties);}
-    @Bean OrderInventoryCredential orderInventoryCredential(OrderInventoryCredentialProperties properties)throws IOException{return new OrderInventoryCredential(properties);}
-    @Bean @Order(1)
-    SecurityFilterChain initializationSecurity(HttpSecurity http,EventInventoryCredential credential,ObjectMapper json)throws Exception{
+
+    @Bean
+    EventInventoryCredential eventInventoryCredential(EventInventoryCredentialProperties properties)
+            throws IOException {
+        return new EventInventoryCredential(properties);
+    }
+
+    @Bean
+    OrderInventoryCredential orderInventoryCredential(OrderInventoryCredentialProperties properties)
+            throws IOException {
+        return new OrderInventoryCredential(properties);
+    }
+
+    @Bean
+    @Order(1)
+    SecurityFilterChain initializationSecurity(
+            HttpSecurity http, EventInventoryCredential credential, ObjectMapper json)
+            throws Exception {
         common(http);
-        return http.securityMatcher("/internal/stocks/initializations","/internal/stocks/initializations/**")
-                .addFilterBefore(new OncePerRequestFilter(){
-                    @Override protected void doFilterInternal(HttpServletRequest request,HttpServletResponse response,FilterChain chain)throws ServletException,IOException{
-                        if(credential.matches(request.getHeader(EventInventoryCredential.HEADER)))SecurityContextHolder.getContext().setAuthentication(
-                                UsernamePasswordAuthenticationToken.authenticated("ticket-event-service",null,List.of(new SimpleGrantedAuthority("ROLE_EVENT_SERVICE"))));
-                        chain.doFilter(request,response);
-                    }
-                },BasicAuthenticationFilter.class)
-                .authorizeHttpRequests(auth->auth
-                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stocks/initializations","/internal/stocks/initializations/{tierId}/seats").hasRole("EVENT_SERVICE")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stocks/initializations/{ticketTierId}").hasRole("EVENT_SERVICE")
-                        .anyRequest().denyAll())
-                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
-                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+        return http.securityMatcher(
+                        "/internal/stocks/initializations", "/internal/stocks/initializations/**")
+                .addFilterBefore(
+                        new OncePerRequestFilter() {
+                            @Override
+                            protected void doFilterInternal(
+                                    HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain chain)
+                                    throws ServletException, IOException {
+                                if (credential.matches(
+                                        request.getHeader(EventInventoryCredential.HEADER)))
+                                    SecurityContextHolder.getContext()
+                                            .setAuthentication(
+                                                    UsernamePasswordAuthenticationToken
+                                                            .authenticated(
+                                                                    "ticket-event-service",
+                                                                    null,
+                                                                    List.of(
+                                                                            new SimpleGrantedAuthority(
+                                                                                    "ROLE_EVENT_SERVICE"))));
+                                chain.doFilter(request, response);
+                            }
+                        },
+                        BasicAuthenticationFilter.class)
+                .authorizeHttpRequests(
+                        auth ->
+                                auth.requestMatchers(
+                                                org.springframework.http.HttpMethod.POST,
+                                                "/internal/stocks/initializations",
+                                                "/internal/stocks/initializations/{tierId}/seats")
+                                        .hasRole("EVENT_SERVICE")
+                                        .requestMatchers(
+                                                org.springframework.http.HttpMethod.GET,
+                                                "/internal/stocks/initializations/{ticketTierId}")
+                                        .hasRole("EVENT_SERVICE")
+                                        .anyRequest()
+                                        .denyAll())
+                .exceptionHandling(
+                        errors ->
+                                errors.authenticationEntryPoint(
+                                                (request, response, error) ->
+                                                        write(response, json, 401))
+                                        .accessDeniedHandler(
+                                                (request, response, error) ->
+                                                        write(response, json, 403)))
+                .build();
     }
-    @Bean @Order(2)
-    SecurityFilterChain orderInventorySecurity(HttpSecurity http,OrderInventoryCredential credential,ObjectMapper json)throws Exception{
+
+    @Bean
+    @Order(2)
+    SecurityFilterChain orderInventorySecurity(
+            HttpSecurity http, OrderInventoryCredential credential, ObjectMapper json)
+            throws Exception {
         common(http);
         return http.securityMatcher("/internal/**")
-                .addFilterBefore(new ServiceCredentialFilter(OrderInventoryCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
-                .authorizeHttpRequests(auth->auth
-                        .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-admissions","/internal/stock-admissions/cancel","/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/inventory/capabilities","/internal/stock-reservations/{reservationId}","/internal/stock-reservations/by-order/{orderNo}","/internal/stocks/{ticketTierId}","/internal/stocks/{tierId}/seats").hasRole("ORDER_SERVICE")
-                        .anyRequest().denyAll())
-                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
-                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+                .addFilterBefore(
+                        new ServiceCredentialFilter(
+                                OrderInventoryCredential.HEADER,
+                                credential::matches,
+                                "ticket-order-service",
+                                "ORDER_SERVICE"),
+                        BasicAuthenticationFilter.class)
+                .authorizeHttpRequests(
+                        auth ->
+                                auth.requestMatchers(
+                                                org.springframework.http.HttpMethod.POST,
+                                                "/internal/stock-admissions",
+                                                "/internal/stock-admissions/cancel",
+                                                "/internal/stock-reservations",
+                                                "/internal/stock-reservations/{reservationId}/confirm",
+                                                "/internal/stock-reservations/{reservationId}/release")
+                                        .hasRole("ORDER_SERVICE")
+                                        .requestMatchers(
+                                                org.springframework.http.HttpMethod.GET,
+                                                "/internal/inventory/capabilities",
+                                                "/internal/stock-reservations/{reservationId}",
+                                                "/internal/stock-reservations/by-order/{orderNo}",
+                                                "/internal/stocks/{ticketTierId}",
+                                                "/internal/stocks/{tierId}/seats")
+                                        .hasRole("ORDER_SERVICE")
+                                        .anyRequest()
+                                        .denyAll())
+                .exceptionHandling(
+                        errors ->
+                                errors.authenticationEntryPoint(
+                                                (request, response, error) ->
+                                                        write(response, json, 401))
+                                        .accessDeniedHandler(
+                                                (request, response, error) ->
+                                                        write(response, json, 403)))
+                .build();
     }
+
     /** 不公开库存写接口，也不允许未列出的内部方法。 */
-    @Bean @Order(3) SecurityFilterChain inventoryFallback(HttpSecurity http,ObjectMapper json)throws Exception{
-        common(http);return http.authorizeHttpRequests(auth->auth.anyRequest().denyAll())
-                .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
-                        .accessDeniedHandler((request,response,error)->write(response,json,403))).build();
+    @Bean
+    @Order(3)
+    SecurityFilterChain inventoryFallback(HttpSecurity http, ObjectMapper json) throws Exception {
+        common(http);
+        return http.authorizeHttpRequests(auth -> auth.anyRequest().denyAll())
+                .exceptionHandling(
+                        errors ->
+                                errors.authenticationEntryPoint(
+                                                (request, response, error) ->
+                                                        write(response, json, 401))
+                                        .accessDeniedHandler(
+                                                (request, response, error) ->
+                                                        write(response, json, 403)))
+                .build();
     }
-    private void common(HttpSecurity http)throws Exception{http.csrf(c->c.disable()).formLogin(c->c.disable()).httpBasic(c->c.disable()).logout(c->c.disable())
-            .requestCache(c->c.disable()).sessionManagement(c->c.sessionCreationPolicy(SessionCreationPolicy.STATELESS));}
-    private void write(HttpServletResponse response,ObjectMapper json,int status)throws IOException{response.setStatus(status);response.setContentType("application/json;charset=UTF-8");json.writeValue(response.getWriter(),new Result<Void>(status==401?"UNAUTHORIZED":"FORBIDDEN","身份凭证缺失、无效或无权调用此接口",null,com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));}
+
+    private void common(HttpSecurity http) throws Exception {
+        http.csrf(c -> c.disable())
+                .formLogin(c -> c.disable())
+                .httpBasic(c -> c.disable())
+                .logout(c -> c.disable())
+                .requestCache(c -> c.disable())
+                .sessionManagement(c -> c.sessionCreationPolicy(SessionCreationPolicy.STATELESS));
+    }
+
+    private void write(HttpServletResponse response, ObjectMapper json, int status)
+            throws IOException {
+        response.setStatus(status);
+        response.setContentType("application/json;charset=UTF-8");
+        json.writeValue(
+                response.getWriter(),
+                new Result<Void>(
+                        status == 401 ? "UNAUTHORIZED" : "FORBIDDEN",
+                        "身份凭证缺失、无效或无权调用此接口",
+                        null,
+                        com.byy.ticket.common.trace.TraceIdContext.getOrCreate()));
+    }
 }

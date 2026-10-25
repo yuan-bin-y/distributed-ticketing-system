@@ -8,8 +8,10 @@ public class InventoryCapabilityScheduling {
     @Bean("inventoryCapabilityScheduler")
     ThreadPoolTaskScheduler scheduler() {
         var scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(1); scheduler.setThreadNamePrefix("inventory-capability-");
-        scheduler.setWaitForTasksToCompleteOnShutdown(true); scheduler.setAwaitTerminationSeconds(8);
+        scheduler.setPoolSize(1);
+        scheduler.setThreadNamePrefix("inventory-capability-");
+        scheduler.setWaitForTasksToCompleteOnShutdown(true);
+        scheduler.setAwaitTerminationSeconds(8);
         return scheduler;
     }
 }

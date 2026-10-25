@@ -56,7 +56,7 @@
 
 ## 快速开始
 
-准备 **Docker Desktop（Linux 引擎）、JDK 17、Maven、Nacos 3.1.2 发行包**，按 [部署指南](docs/docker-deployment.md) 设置数据库环境变量和 Nacos 路径。
+准备 **Docker Desktop（Linux 引擎）、JDK 17、Nacos 3.1.2 发行包**，按 [部署指南](docs/docker-deployment.md) 设置数据库环境变量和 Nacos 路径。构建使用仓库自带的 Maven Wrapper。
 
 | 根目录双击入口 | 用途 |
 | --- | --- |
@@ -76,8 +76,14 @@
 ## 文档
 
 - [部署与启动](docs/docker-deployment.md)
-- [API / Apifox 使用指南](docs/apifox/README.md)：35 个公开接口、17 个内部接口。
+- [API / Apifox 使用指南](docs/apifox/README.md)：39 个公开接口、19 个内部接口，包含订单人工核对和库存协议检查。
 - [可靠性运维与 HA 演练](docs/operations.md)：消息治理、容量规划、自动化回归、故障切换与备份恢复。
+
+## 构建与验证
+
+JDK 17 下执行 `./mvnw verify`（Windows使用 `mvnw.cmd`）。完整集成回归使用 `-Pintegration`，读取独立测试中间件配置；GitHub Actions运行同一门禁，要求关键测试未跳过，并输出覆盖率报告。步骤见[自动回归说明](docs/operations.md#自动回归)。
+
+订单人工核对保留操作审计，按付款和库存事实恢复或冲正；历史预扣凭据归档保留幂等，重建只加载活跃记录。六个服务提供存活/就绪探针，网关排除未就绪实例。
 
 ## 项目范围
 

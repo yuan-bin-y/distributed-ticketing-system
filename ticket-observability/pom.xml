@@ -5,6 +5,11 @@
     <parent><groupId>com.byy</groupId><artifactId>distributed-ticketing-system</artifactId><version>1.0-SNAPSHOT</version></parent>
     <artifactId>ticket-observability</artifactId>
     <dependencies>
+        <!-- 仅Servlet服务使用；不向WebFlux网关传递Servlet运行时。 -->
+        <dependency><groupId>org.springframework</groupId><artifactId>spring-web</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>org.springframework</groupId><artifactId>spring-webmvc</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>jakarta.servlet</groupId><artifactId>jakarta.servlet-api</artifactId><optional>true</optional></dependency>
+        <dependency><groupId>tools.jackson.core</groupId><artifactId>jackson-databind</artifactId><optional>true</optional></dependency>
         <dependency><groupId>com.byy</groupId><artifactId>ticket-common</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
         <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-opentelemetry</artifactId></dependency>

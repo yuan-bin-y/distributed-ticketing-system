@@ -1,40 +1,41 @@
 package com.byy.ticket.order.service.impl;
 
-import com.byy.ticket.order.client.EventCallGuard;
+import com.byy.ticket.common.exception.ResourceNotFoundException;
 import com.byy.ticket.common.trace.PerformanceSpan;
+import com.byy.ticket.order.client.EventCallGuard;
 import com.byy.ticket.order.client.InventoryClient;
 import com.byy.ticket.order.client.PaymentClient;
 import com.byy.ticket.order.client.dto.PaymentCreateRequest;
 import com.byy.ticket.order.client.dto.StockReservationRequest;
-import com.byy.ticket.order.client.exception.EventServiceCallException;
+import com.byy.ticket.order.config.OrderWorkflowProperties;
+import com.byy.ticket.order.dto.order.OrderCreateDTO;
 import com.byy.ticket.order.dto.order.OrderPreviewDTO;
 import com.byy.ticket.order.dto.order.OrderStockReserveDTO;
+import com.byy.ticket.order.exception.OrderConflictException;
+import com.byy.ticket.order.mapper.OrderItemMapper;
+import com.byy.ticket.order.mapper.OrderMapper;
+import com.byy.ticket.order.model.OrderItem;
+import com.byy.ticket.order.model.OrderStatus;
+import com.byy.ticket.order.model.TicketOrder;
 import com.byy.ticket.order.service.OrderService;
-import com.byy.ticket.order.vo.order.OrderPreviewVO;
-import com.byy.ticket.order.vo.order.OrderStockReservationVO;
-import com.byy.ticket.common.exception.ResourceNotFoundException;
-import com.byy.ticket.order.dto.order.OrderCreateDTO;
+import com.byy.ticket.order.service.OrderStockWorkflow;
+import com.byy.ticket.order.service.OrderTransactionService;
 import com.byy.ticket.order.vo.order.OrderDetailVO;
 import com.byy.ticket.order.vo.order.OrderPaymentVO;
-import com.byy.ticket.order.config.OrderWorkflowProperties;
-import com.byy.ticket.order.exception.OrderConflictException;
-import com.byy.ticket.order.mapper.OrderMapper;
-import com.byy.ticket.order.mapper.OrderItemMapper;
-import com.byy.ticket.order.model.TicketOrder;
-import com.byy.ticket.order.model.OrderStatus;
-import com.byy.ticket.order.model.OrderItem;
-import com.byy.ticket.order.service.OrderTransactionService;
-import com.byy.ticket.order.service.OrderStockWorkflow;
+import com.byy.ticket.order.vo.order.OrderPreviewVO;
+import com.byy.ticket.order.vo.order.OrderStockReservationVO;
+
 import org.springframework.dao.DuplicateKeyException;
-import java.time.temporal.ChronoUnit;
 import org.springframework.stereotype.Service;
+
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 
 /**
- * 订单业务编排：EventCallGuard保护规则查询，InventoryClient调用库存，PaymentClient创建支付单。
- * Client 发出 HTTP 请求；目标服务自己的 Controller、Service 和 Mapper 完成对应业务。
+ * 订单业务编排：EventCallGuard保护规则查询，InventoryClient调用库存，PaymentClient创建支付单。 Client 发出 HTTP 请求；目标服务自己的
+ * Controller、Service 和 Mapper 完成对应业务。
  */
 @Service
 public class OrderServiceImpl implements OrderService {
@@ -47,17 +48,22 @@ public class OrderServiceImpl implements OrderService {
     private final OrderTransactionService transactions;
     private final OrderStockWorkflow workflow;
     private final OrderWorkflowProperties properties;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.order.client.StockAdmissionClient admissions;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.byy.ticket.order.rules.PurchaseRuleEngine rules;
+    private final com.byy.ticket.order.client.StockAdmissionClient admissions;
+    private final com.byy.ticket.order.rules.PurchaseRuleEngine rules;
 
-    /**
-     * 注入远程 Client、本服务的订单 Mapper、短事务与恢复组件；不访问其他服务的数据库。
-     */
-    public OrderServiceImpl(EventCallGuard eventCallGuard, InventoryClient inventoryClient, Clock clock,
-                            OrderMapper orders, OrderItemMapper items, OrderTransactionService transactions,
-                            OrderStockWorkflow workflow, OrderWorkflowProperties properties, PaymentClient paymentClient) {
+    /** 注入远程 Client、本服务的订单 Mapper、短事务与恢复组件；不访问其他服务的数据库。 */
+    public OrderServiceImpl(
+            EventCallGuard eventCallGuard,
+            InventoryClient inventoryClient,
+            Clock clock,
+            OrderMapper orders,
+            OrderItemMapper items,
+            OrderTransactionService transactions,
+            OrderStockWorkflow workflow,
+            OrderWorkflowProperties properties,
+            PaymentClient paymentClient,
+            com.byy.ticket.order.client.StockAdmissionClient admissions,
+            com.byy.ticket.order.rules.PurchaseRuleEngine rules) {
         this.eventCallGuard = eventCallGuard;
         this.inventoryClient = inventoryClient;
         this.clock = clock;
@@ -67,56 +73,92 @@ public class OrderServiceImpl implements OrderService {
         this.workflow = workflow;
         this.properties = properties;
         this.paymentClient = paymentClient;
+        this.admissions = admissions;
+        this.rules = rules;
     }
 
-    /**
-     * 校验购买幂等键，查询规则并落库，再在本地事务之外调用库存。
-     * 唯一键竞争发生时，事务 Bean 已回滚，才能读取并返回获胜请求的订单。
-     */
+    /** 校验购买幂等键，查询规则并落库，再在本地事务之外调用库存。 唯一键竞争发生时，事务 Bean 已回滚，才能读取并返回获胜请求的订单。 */
     @Override
     public OrderDetailVO create(Long userId, OrderCreateDTO request) {
-        try(var span=PerformanceSpan.open("order.create")){
-            return PerformanceSpan.measure("business",()->createMeasured(userId,request));
+        try (var span = PerformanceSpan.open("order.create")) {
+            return PerformanceSpan.measure("business", () -> createMeasured(userId, request));
         }
     }
+
     private OrderDetailVO createMeasured(Long userId, OrderCreateDTO request) {
         validateCreate(userId, request);
-        TicketOrder existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
-        if (existing != null) { return repeat(existing, request); }
-        admissions.requireCompatible();
-        var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
-        LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
-        rules.checkRequest(request.quantity(),rule,now);
-        if (rule.price().scale() > 2 || rule.price().compareTo(new BigDecimal("9999999999.99")) > 0
-                || rule.ticketTierName().length() > 128) {
-            throw new EventServiceCallException(
-                    EventServiceCallException.Reason.INVALID_RESPONSE,
-                    "活动规则不能保存为订单快照");
-        }
-        BigDecimal amount = rule.price().multiply(BigDecimal.valueOf(request.quantity()));
-        if (amount.compareTo(new BigDecimal("9999999999999999.99")) > 0) {
-            throw new IllegalArgumentException("订单金额超出可保存范围");
-        }
-        TicketOrder order;
-        String orderNo=com.byy.ticket.order.service.PurchaseRequestId.of(userId,request.idempotencyKey());
-        var stockRequest=new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),
-                now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS),request.seatIds());
-        LocalDateTime expiresAt=admissions.enabled()?admissions.hold(stockRequest).expiresAt():stockRequest.expiresAt();
-        try {
-            order = PerformanceSpan.measure("local.transaction",()->transactions.createAccepted(orderNo,userId,request,rule,amount,now,expiresAt));
-        } catch (DuplicateKeyException exception) {
-            existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
-            if (existing == null) { throw exception; }
+        TicketOrder existing =
+                PerformanceSpan.measure(
+                        "idempotency.lookup",
+                        () -> orders.selectByRequest(userId, request.idempotencyKey()));
+        if (existing != null) {
             return repeat(existing, request);
-        } catch(OrderConflictException rejected) {
+        }
+        admissions.requireCompatible();
+        var rule =
+                PerformanceSpan.measure(
+                        "event.http", () -> eventCallGuard.getPurchaseRule(request.ticketTierId()));
+        LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
+        rules.checkRequest(request.quantity(), rule, now);
+        BigDecimal amount =
+                com.byy.ticket.order.service.PurchaseSnapshot.amount(rule, request.quantity());
+        TicketOrder order;
+        String orderNo =
+                com.byy.ticket.order.service.PurchaseRequestId.of(userId, request.idempotencyKey());
+        var stockRequest =
+                new StockReservationRequest(
+                        orderNo,
+                        rule.sessionId(),
+                        rule.ticketTierId(),
+                        request.quantity(),
+                        now.plus(properties.paymentWindow()).truncatedTo(ChronoUnit.MILLIS),
+                        request.seatIds());
+        LocalDateTime expiresAt =
+                admissions.enabled()
+                        ? admissions.hold(stockRequest).expiresAt()
+                        : stockRequest.expiresAt();
+        try {
+            order =
+                    PerformanceSpan.measure(
+                            "local.transaction",
+                            () ->
+                                    transactions.createAccepted(
+                                            orderNo, userId, request, rule, amount, now,
+                                            expiresAt));
+        } catch (DuplicateKeyException exception) {
+            existing =
+                    PerformanceSpan.measure(
+                            "idempotency.lookup",
+                            () -> orders.selectByRequest(userId, request.idempotencyKey()));
+            if (existing == null) {
+                throw exception;
+            }
+            return repeat(existing, request);
+        } catch (OrderConflictException rejected) {
             // 本地事务已明确回滚，可取消准入；失败不掩盖原错误，库存后台在期限后继续核对。
-            if(admissions.enabled())try{admissions.cancel(new StockReservationRequest(orderNo,rule.sessionId(),rule.ticketTierId(),request.quantity(),expiresAt,request.seatIds()));}
-            catch(RuntimeException uncertain){rejected.addSuppressed(uncertain);}
+            if (admissions.enabled())
+                try {
+                    admissions.cancel(
+                            new StockReservationRequest(
+                                    orderNo,
+                                    rule.sessionId(),
+                                    rule.ticketTierId(),
+                                    request.quantity(),
+                                    expiresAt,
+                                    request.seatIds()));
+                } catch (RuntimeException uncertain) {
+                    rejected.addSuppressed(uncertain);
+                }
             throw rejected;
         }
-        Long orderId=order.getId();
-        PerformanceSpan.measure("inventory.workflow",()->{workflow.advance(orderId);return null;});
-        return PerformanceSpan.measure("detail.query",()->detail(orders.selectById(orderId)));
+        Long orderId = order.getId();
+        PerformanceSpan.measure(
+                "inventory.workflow",
+                () -> {
+                    workflow.advance(orderId);
+                    return null;
+                });
+        return PerformanceSpan.measure("detail.query", () -> detail(orders.selectById(orderId)));
     }
 
     /** 归属查询：不存在和不属于当前用户都返回 404，不泄漏其他用户订单。 */
@@ -126,13 +168,14 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("用户或订单编号不正确");
         }
         TicketOrder order = orders.selectOwned(userId, orderNo);
-        if (order == null) { throw new ResourceNotFoundException("订单不存在"); }
+        if (order == null) {
+            throw new ResourceNotFoundException("订单不存在");
+        }
         return detail(order);
     }
 
     /**
-     * 发起支付只读取已保存的订单快照，HTTP调用不占用数据库事务。
-     * 响应返回后再检查归属、状态与期限；若已关闭则不把支付单当作仍可付款返回。
+     * 发起支付只读取已保存的订单快照，HTTP调用不占用数据库事务。 响应返回后再检查归属、状态与期限；若已关闭则不把支付单当作仍可付款返回。
      * 创建失败或响应丢失不改订单，重试仍使用同一订单编号、金额和期限。
      */
     @Override
@@ -141,15 +184,31 @@ public class OrderServiceImpl implements OrderService {
             throw new IllegalArgumentException("用户或订单编号不正确");
         }
         TicketOrder order = orders.selectOwned(userId, orderNo);
-        if (order == null) { throw new ResourceNotFoundException("订单不存在"); }
+        if (order == null) {
+            throw new ResourceNotFoundException("订单不存在");
+        }
         requirePayable(order);
-        var payment = paymentClient.createPayment(new PaymentCreateRequest(order.getOrderNo(), order.getUserId(),
-                order.getTotalAmount(), order.getExpiresAt()));
+        var payment =
+                paymentClient.createPayment(
+                        new PaymentCreateRequest(
+                                order.getOrderNo(),
+                                order.getUserId(),
+                                order.getTotalAmount(),
+                                order.getExpiresAt()));
         TicketOrder current = orders.selectOwned(userId, orderNo);
-        if (current == null) { throw new ResourceNotFoundException("订单不存在"); }
+        if (current == null) {
+            throw new ResourceNotFoundException("订单不存在");
+        }
         requirePayable(current);
-        return new OrderPaymentVO(payment.orderNo(), payment.paymentNo(), payment.amount(), payment.status(),
-                payment.expiresAt(), payment.paidAt(), payment.reversalNo(), payment.reversalStatus());
+        return new OrderPaymentVO(
+                payment.orderNo(),
+                payment.paymentNo(),
+                payment.amount(),
+                payment.status(),
+                payment.expiresAt(),
+                payment.paidAt(),
+                payment.reversalNo(),
+                payment.reversalStatus());
     }
 
     /** 发起支付要求已确认库存预留、订单待支付且当前时间严格早于到期时间。 */
@@ -157,7 +216,8 @@ public class OrderServiceImpl implements OrderService {
         if (!OrderStatus.PENDING_PAYMENT.name().equals(order.getStatus())) {
             throw new OrderConflictException("当前订单状态不能发起支付");
         }
-        if (order.getExpiresAt() == null || !order.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
+        if (order.getExpiresAt() == null
+                || !order.getExpiresAt().isAfter(LocalDateTime.now(clock))) {
             throw new OrderConflictException("订单已到期，不能发起支付");
         }
         if (order.getReservationId() == null || !order.getReservationId().matches("[0-9a-f]{32}")) {
@@ -168,9 +228,15 @@ public class OrderServiceImpl implements OrderService {
     /** 重复购买只核对快照并返回原订单；后台任务负责恢复，不突破持久化退避。 */
     private OrderDetailVO repeat(TicketOrder order, OrderCreateDTO request) {
         OrderItem item = items.selectByOrderId(order.getId());
-        if (item == null) { throw new IllegalStateException("订单购买快照缺失"); }
-        if (!item.getTicketTierId().equals(request.ticketTierId()) || !item.getQuantity().equals(request.quantity())
-            ||!request.seatIds().equals(com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()))) {
+        if (item == null) {
+            throw new IllegalStateException("订单购买快照缺失");
+        }
+        if (!item.getTicketTierId().equals(request.ticketTierId())
+                || !item.getQuantity().equals(request.quantity())
+                || !request.seatIds()
+                        .equals(
+                                com.byy.ticket.common.seat.SeatSelection.decode(
+                                        item.getSeatIds()))) {
             throw new OrderConflictException("同一购买幂等键必须使用相同票档和数量");
         }
         return detail(order);
@@ -178,54 +244,97 @@ public class OrderServiceImpl implements OrderService {
 
     /** 把数据库主表和名称、价格快照组装为响应；不读取活动最新价格。 */
     private OrderDetailVO detail(TicketOrder order) {
-        if (order == null) { throw new IllegalStateException("订单记录缺失"); }
+        if (order == null) {
+            throw new IllegalStateException("订单记录缺失");
+        }
         OrderItem item = items.selectByOrderId(order.getId());
-        if (item == null) { throw new IllegalStateException("订单购买快照缺失"); }
-        return new OrderDetailVO(order.getOrderNo(), order.getStatus(), item.getEventId(), item.getSessionId(),
-                item.getTicketTierId(), item.getTicketTierName(), item.getUnitPrice(), item.getQuantity(),
-                order.getTotalAmount(), order.getExpiresAt(), order.getReservationId(), order.getCreatedAt(),com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()),item.getRuleVersion());
+        if (item == null) {
+            throw new IllegalStateException("订单购买快照缺失");
+        }
+        return new OrderDetailVO(
+                order.getOrderNo(),
+                order.getStatus(),
+                item.getEventId(),
+                item.getSessionId(),
+                item.getTicketTierId(),
+                item.getTicketTierName(),
+                item.getUnitPrice(),
+                item.getQuantity(),
+                order.getTotalAmount(),
+                order.getExpiresAt(),
+                order.getReservationId(),
+                order.getCreatedAt(),
+                com.byy.ticket.common.seat.SeatSelection.decode(item.getSeatIds()),
+                item.getRuleVersion());
     }
 
     /** Service 入口也校验参数，避免内部调用绕过 Controller 的 Valid。 */
     private void validateCreate(Long userId, OrderCreateDTO request) {
-        if (userId == null || userId < 1 || request == null || request.ticketTierId() == null
-                || request.ticketTierId() < 1 || request.quantity() == null || request.quantity() < 1
-                || request.idempotencyKey() == null || !request.idempotencyKey().matches("[A-Za-z0-9_-]{1,64}")) {
+        if (userId == null
+                || userId < 1
+                || request == null
+                || request.ticketTierId() == null
+                || request.ticketTierId() < 1
+                || request.quantity() == null
+                || request.quantity() < 1
+                || request.idempotencyKey() == null
+                || !request.idempotencyKey().matches("[A-Za-z0-9_-]{1,64}")) {
             throw new IllegalArgumentException("下单参数不正确");
         }
     }
 
     /**
-     * 把订单侧 DTO 转成远程请求对象，调用 InventoryClient.reserve，再转换返回 VO。
-     * 库存服务独立完成幂等与库存事务；这里当前没有订单持久化、活动规则或身份校验。
+     * 把订单侧 DTO 转成远程请求对象，调用 InventoryClient.reserve，再转换返回 VO。 库存服务独立完成幂等与库存事务；这里当前没有订单持久化、活动规则或身份校验。
      */
     @Override
     public OrderStockReservationVO reserveStock(OrderStockReserveDTO request) {
         if (request == null) {
             throw new IllegalArgumentException("库存预留参数不能为空");
         }
-        var reservation = inventoryClient.reserve(new StockReservationRequest(request.orderId(), request.sessionId(),
-                request.ticketTierId(), request.quantity(), request.expiresAt()));
-        return new OrderStockReservationVO(reservation.reservationId(), reservation.orderId(), reservation.sessionId(),
-                reservation.ticketTierId(), reservation.quantity(), reservation.expiresAt(), reservation.status());
+        var reservation =
+                inventoryClient.reserve(
+                        new StockReservationRequest(
+                                request.orderId(),
+                                request.sessionId(),
+                                request.ticketTierId(),
+                                request.quantity(),
+                                request.expiresAt()));
+        return new OrderStockReservationVO(
+                reservation.reservationId(),
+                reservation.orderId(),
+                reservation.sessionId(),
+                reservation.ticketTierId(),
+                reservation.quantity(),
+                reservation.expiresAt(),
+                reservation.status());
     }
 
     /**
-     * 先校验参数，再经过 EventCallGuard 调用 EventClient 读取活动规则。
-     * 检查当前时间在开售时间内、本次购买数量不超过限购，并按单价乘数量计算总价。
-     * 只生成预览 VO，不创建订单、不预留库存，也不统计用户历史购买次数。
+     * 先校验参数，再经过 EventCallGuard 调用 EventClient 读取活动规则。 检查当前时间在开售时间内、本次购买数量不超过限购，并按单价乘数量计算总价。 只生成预览
+     * VO，不创建订单、不预留库存，也不统计用户历史购买次数。
      */
     @Override
     public OrderPreviewVO preview(OrderPreviewDTO request) {
-        if (request == null || request.ticketTierId() == null || request.ticketTierId() < 1
-                || request.quantity() == null || request.quantity() < 1) {
+        if (request == null
+                || request.ticketTierId() == null
+                || request.ticketTierId() < 1
+                || request.quantity() == null
+                || request.quantity() < 1) {
             throw new IllegalArgumentException("票档ID和购买数量必须大于零");
         }
-        var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
+        var rule =
+                PerformanceSpan.measure(
+                        "event.http", () -> eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock);
-        rules.checkRequest(request.quantity(),rule,now);
+        rules.checkRequest(request.quantity(), rule, now);
         BigDecimal totalAmount = rule.price().multiply(BigDecimal.valueOf(request.quantity()));
-        return new OrderPreviewVO(rule.eventId(), rule.sessionId(), rule.ticketTierId(), rule.ticketTierName(),
-                rule.price(), request.quantity(), totalAmount);
+        return new OrderPreviewVO(
+                rule.eventId(),
+                rule.sessionId(),
+                rule.ticketTierId(),
+                rule.ticketTierName(),
+                rule.price(),
+                request.quantity(),
+                totalAmount);
     }
 }

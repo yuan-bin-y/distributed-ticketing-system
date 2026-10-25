@@ -2,8 +2,8 @@
   "openapi": "3.0.3",
   "info": {
     "title": "分布式票务交易平台 公开API",
-    "version": "3.0.0",
-    "description": "公开HTTP契约：Gateway默认18060。新增Redis预扣、Drools版本化规则、跨场次限购、异步受理与选座。异步202只表示受理与Outbox已持久化，查询受理到CREATED后仍需查询订单到PENDING_PAYMENT再付款，最终COMPLETED才代表出票。选座和普通票共用订单接口。用户身份来自JWT，内部接口不经过网关。"
+    "version": "3.1.0",
+    "description": "公开HTTP契约：Gateway默认18060。新增Redis预扣、Drools版本化规则、跨场次限购、异步受理与选座。异步202只表示受理与Outbox已持久化，查询受理到CREATED后仍需查询订单到PENDING_PAYMENT再付款，最终COMPLETED才代表出票。选座和普通票共用订单接口。用户身份来自JWT，内部接口不经过网关。 新增管理员订单人工核对：查询事实、提交幂等处置和查询审计。"
   },
   "servers": [
     {
@@ -47,6 +47,10 @@
     },
     {
       "name": "09 选座"
+    },
+    {
+      "name": "10 订单人工核对",
+      "description": "仅ADMIN。按原付款、库存事实恢复，不提供任意改状态接口。"
     }
   ],
   "paths": {
@@ -5033,6 +5037,442 @@
           }
         }
       }
+    },
+    "/api/orders/admin/reviews": {
+      "get": {
+        "summary": "分页查询待核对订单",
+        "tags": [
+          "10 订单人工核对"
+        ],
+        "operationId": "HardeningListOrderReviews",
+        "parameters": [
+          {
+            "name": "after",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "format": "int64",
+              "minimum": 0,
+              "default": 0
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardeningListOrderReviewsResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/admin/reviews/{orderNo}": {
+      "get": {
+        "summary": "查询订单核对事实和审计",
+        "tags": [
+          "10 订单人工核对"
+        ],
+        "operationId": "HardeningGetOrderReview",
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardeningGetOrderReviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/admin/reviews/{orderNo}/actions": {
+      "post": {
+        "summary": "提交订单核对处置",
+        "tags": [
+          "10 订单人工核对"
+        ],
+        "operationId": "HardeningSubmitOrderReview",
+        "parameters": [
+          {
+            "name": "orderNo",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "已保存处置命令，查询最终处理结果",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardeningSubmitOrderReviewResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "idempotencyKey": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                  },
+                  "action": {
+                    "type": "string",
+                    "enum": [
+                      "RECHECK",
+                      "RECONCILE",
+                      "RESUME",
+                      "CLOSE",
+                      "REVERSE"
+                    ]
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": [
+                  "idempotencyKey",
+                  "action",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "description": "RECHECK仅保存事实；RECONCILE按事实恢复；RESUME恢复待支付或履约；CLOSE仅在核实未付且到期后关闭；REVERSE仅在库存释放或已有冲正依据时恢复原冲正流程。同幂等键必须保持原操作人、方向和原因。未知远程结果重试；DONE表示命令已处理，仍需查询订单最终状态。",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/orders/admin/reviews/actions/{actionId}": {
+      "get": {
+        "summary": "查询处置结果",
+        "tags": [
+          "10 订单人工核对"
+        ],
+        "operationId": "HardeningGetOrderReviewAction",
+        "parameters": [
+          {
+            "name": "actionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HardeningGetOrderReviewActionResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "核对HTTP状态与业务code",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResult"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
     }
   },
   "components": {
@@ -7312,6 +7752,248 @@
           },
           "data": {
             "nullable": true
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "OrderReviewAction": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "orderId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "requestKey": {
+            "type": "string"
+          },
+          "operatorId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "RECHECK",
+              "RECONCILE",
+              "RESUME",
+              "CLOSE",
+              "REVERSE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "RUNNING",
+              "DONE",
+              "REJECTED",
+              "SUPERSEDED"
+            ]
+          },
+          "attemptCount": {
+            "type": "integer"
+          },
+          "nextAttemptAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "factsJson": {
+            "type": "string",
+            "nullable": true
+          },
+          "resultStatus": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastError": {
+            "type": "string",
+            "nullable": true
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "orderId",
+          "requestKey",
+          "operatorId",
+          "action",
+          "reason",
+          "status",
+          "attemptCount",
+          "nextAttemptAt",
+          "factsJson",
+          "resultStatus",
+          "lastError",
+          "createdAt"
+        ]
+      },
+      "OrderReviewOrder": {
+        "type": "object",
+        "additionalProperties": true,
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "orderNo": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{32}$"
+          },
+          "userId": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string"
+          },
+          "quotaStatus": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totalAmount": {
+            "type": "number"
+          }
+        }
+      },
+      "HardeningListOrderReviewsResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrderReviewOrder"
+            }
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "HardeningGetOrderReviewResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "order": {
+                "$ref": "#/components/schemas/OrderReviewOrder"
+              },
+              "item": {
+                "type": "object",
+                "additionalProperties": true
+              },
+              "facts": {
+                "type": "object",
+                "additionalProperties": true,
+                "nullable": true
+              },
+              "factError": {
+                "type": "string",
+                "nullable": true
+              },
+              "actions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OrderReviewAction"
+                }
+              }
+            },
+            "required": [
+              "order",
+              "item",
+              "facts",
+              "factError",
+              "actions"
+            ]
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "HardeningSubmitOrderReviewResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderReviewAction"
+          },
+          "traceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "traceId"
+        ]
+      },
+      "HardeningGetOrderReviewActionResult": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/OrderReviewAction"
           },
           "traceId": {
             "type": "string"
