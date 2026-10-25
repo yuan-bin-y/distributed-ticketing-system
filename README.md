@@ -46,17 +46,38 @@
 
 ## 交易流程
 
-```text
-活动草稿 → 准备库存与座位 → 发布活动
-                               ↓
-用户登录 → 查询活动与规则 → Redis 预扣 → 同步建单 / 异步受理建单
-                               ↓
-                    模拟付款 → Outbox → RabbitMQ
-                               ↓
-                    核对付款 → 确认库存 → 生成电子票
+```mermaid
+%%{init: {"theme": "base", "flowchart": {"htmlLabels": false, "curve": "linear", "nodeSpacing": 24, "rankSpacing": 32, "wrappingWidth": 220}, "themeVariables": {"fontFamily": "sans-serif", "fontSize": "14px", "lineColor": "#64748b", "primaryTextColor": "#1e293b"}}}%%
+flowchart TB
+    subgraph Prepare["01 · 活动发布"]
+        direction LR
+        A["创建活动草稿<br/>Event"] --> B["准备库存与座位<br/>Inventory"] --> C["发布活动<br/>Event"]
+    end
+
+    subgraph Purchase["02 · 购票建单"]
+        direction LR
+        D["认证与规则校验<br/>Gateway / Auth / Order"] --> E["数量与座位预扣<br/>Inventory / Redis"] --> F["建单与正式预留<br/>Order → Inventory"]
+    end
+
+    subgraph Fulfill["03 · 付款出票"]
+        direction LR
+        G["保存付款事实与事件<br/>Payment / Outbox"] --> H["投递付款成功事件<br/>RabbitMQ"] --> I["核对付款并履约出票<br/>Order / Inventory"]
+    end
+
+    Prepare --> Purchase --> Fulfill
+
+    classDef prepare fill:#eff6ff,stroke:#93c5fd,color:#1e3a5f,rx:8,ry:8
+    classDef purchase fill:#f0fdf4,stroke:#86c7a0,color:#14532d,rx:8,ry:8
+    classDef fulfill fill:#fff7ed,stroke:#fdba74,color:#7c2d12,rx:8,ry:8
+    class A,B,C prepare
+    class D,E,F purchase
+    class G,H,I fulfill
+    style Prepare fill:#f8fafc,stroke:#e2e8f0,color:#334155
+    style Purchase fill:#f8fafc,stroke:#e2e8f0,color:#334155
+    style Fulfill fill:#f8fafc,stroke:#e2e8f0,color:#334155
 ```
 
-异步入口返回 `202` 表示已受理，最终出票以订单达到 `COMPLETED` 为准。跨服务采用可恢复的最终一致性，网络超时通过原编号幂等、事实核对和后台补偿处理。
+支持同步建单和经独立 Outbox / MQ 推进的异步建单，正式库存预留完成后才允许发起支付。异步入口返回 `202` 表示已受理，最终出票以订单达到 `COMPLETED` 为准。跨服务采用可恢复的最终一致性，网络超时通过原编号幂等、事实核对和后台补偿处理。
 
 活动列表使用分页，场次和票档使用游标查询；选座页按视窗加载、版本增量更新和虚拟渲染，避免一次传输和渲染全部座位。
 
