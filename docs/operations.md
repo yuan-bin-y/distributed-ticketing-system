@@ -309,3 +309,7 @@ Redis 重建只装载有效 HELD 请求和可用座位，临时哈希每批写�
 完整测试读取 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`、`TICKET_TEST_MYSQL_BASE`（默认本机3306）；Redis、RabbitMQ默认16379、15673，可用 `-Dticket.test.redis.port=6379 -Dticket.test.rabbitmq.port=5672` 修改。RabbitMQ测试账号可用 `TICKET_TEST_RABBITMQ_USER`、`TICKET_TEST_RABBITMQ_PASSWORD` 指定。
 
 GitHub Actions使用独立服务运行完整集成 profile，检查关键测试未跳过，并保存 Surefire/JaCoCo 报告。普通 `mvn test` 会跳过需要外部依赖的测试，不能替代完整门禁。Windows可运行 `deploy/tests/run-regression.ps1 -Integration -Redis -RabbitMQ`；脚本使用项目 Wrapper。
+
+## 库存协议检查
+
+新下单通过带Order服务凭证的 `/internal/inventory/capabilities` 检查协议版本和Redis准入开关。Order与Inventory使用相同的 `TICKET_STOCK_ADMISSION_ENABLED`；失配返回明确的配置错误，不会自动切换扣量方式。成功能力缓存两秒，后台每三秒核对，就绪探针读取最近结果。旧订单重试先查原记录，恢复流程继续按原幂等事实处理。

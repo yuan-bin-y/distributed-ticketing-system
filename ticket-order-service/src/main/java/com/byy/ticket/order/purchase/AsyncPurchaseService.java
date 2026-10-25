@@ -33,6 +33,7 @@ public class AsyncPurchaseService {
         if(user<1||request==null||request.ticketTierId()==null||request.ticketTierId()<1||request.quantity()==null||request.quantity()<1||request.idempotencyKey()==null||!request.idempotencyKey().matches("[A-Za-z0-9_-]{1,64}"))throw new IllegalArgumentException("受理参数无效");
         var old=acceptance.byKey(user,request.idempotencyKey());
         if(old!=null){if(!request.equals(json.readValue(old.getRequestJson(),OrderCreateDTO.class)))throw new OrderConflictException("相同幂等键的购买参数不一致");return view(old);}
+        inventory.requireCompatible();
         var rule=events.getPurchaseRule(request.ticketTierId());var now=LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);rules.checkRequest(request.quantity(),rule,now);
         BigDecimal amount=rule.price().multiply(BigDecimal.valueOf(request.quantity()));
         if(rule.price().scale()>2||rule.ticketTierName().length()>128||amount.compareTo(new BigDecimal("9999999999999999.99"))>0)throw new IllegalArgumentException("金额或名称无法保存为订单快照");

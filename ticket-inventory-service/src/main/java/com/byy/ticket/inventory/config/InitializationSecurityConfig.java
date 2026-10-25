@@ -27,10 +27,10 @@ public class InitializationSecurityConfig {
     public org.springframework.security.web.SecurityFilterChain managementSecurity(
             org.springframework.security.config.annotation.web.builders.HttpSecurity http,
             @org.springframework.beans.factory.annotation.Value("${management.server.port:-1}") int port) throws Exception {
-        return http.securityMatcher(request -> port>0 && request.getLocalPort()==port)
+        return http.securityMatcher(request -> (port>0 && request.getLocalPort()==port) || "/readyz".equals(request.getRequestURI()) || "/livez".equals(request.getRequestURI()))
                 .csrf(c->c.disable()).httpBasic(c->c.disable()).formLogin(c->c.disable())
                 .authorizeHttpRequests(a->a.requestMatchers(org.springframework.http.HttpMethod.GET,
-                        "/actuator/health","/actuator/prometheus").permitAll().anyRequest().denyAll()).build();
+                        "/actuator/health","/actuator/health/**","/actuator/prometheus","/readyz","/livez").permitAll().anyRequest().denyAll()).build();
     }
     @Bean EventInventoryCredential eventInventoryCredential(EventInventoryCredentialProperties properties)throws IOException{return new EventInventoryCredential(properties);}
     @Bean OrderInventoryCredential orderInventoryCredential(OrderInventoryCredentialProperties properties)throws IOException{return new OrderInventoryCredential(properties);}
@@ -59,7 +59,7 @@ public class InitializationSecurityConfig {
                 .addFilterBefore(new ServiceCredentialFilter(OrderInventoryCredential.HEADER,credential::matches,"ticket-order-service","ORDER_SERVICE"),BasicAuthenticationFilter.class)
                 .authorizeHttpRequests(auth->auth
                         .requestMatchers(org.springframework.http.HttpMethod.POST,"/internal/stock-admissions","/internal/stock-admissions/cancel","/internal/stock-reservations","/internal/stock-reservations/{reservationId}/confirm","/internal/stock-reservations/{reservationId}/release").hasRole("ORDER_SERVICE")
-                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/stock-reservations/{reservationId}","/internal/stock-reservations/by-order/{orderNo}","/internal/stocks/{ticketTierId}","/internal/stocks/{tierId}/seats").hasRole("ORDER_SERVICE")
+                        .requestMatchers(org.springframework.http.HttpMethod.GET,"/internal/inventory/capabilities","/internal/stock-reservations/{reservationId}","/internal/stock-reservations/by-order/{orderNo}","/internal/stocks/{ticketTierId}","/internal/stocks/{tierId}/seats").hasRole("ORDER_SERVICE")
                         .anyRequest().denyAll())
                 .exceptionHandling(errors->errors.authenticationEntryPoint((request,response,error)->write(response,json,401))
                         .accessDeniedHandler((request,response,error)->write(response,json,403))).build();

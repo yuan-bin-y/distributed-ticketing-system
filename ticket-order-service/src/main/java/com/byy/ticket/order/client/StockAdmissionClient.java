@@ -34,6 +34,33 @@ public class StockAdmissionClient {
             denied->new InventoryServiceCallException(Reason.UNAVAILABLE,"库存准入暂被保护组件拒绝，请保持原请求核对",denied));
     }
     public boolean enabled(){return enabled;}
+    public record Capability(int protocolVersion, boolean stockAdmission, boolean selectedSeats) { }
+    private volatile long capabilityCheckedAt;
+    private volatile Capability capability;
+
+    /** 成功结果仅缓存两秒；失败不沿用旧能力，不自动改变扣量协议。 */
+    public void requireCompatible() {
+        if (capability != null && System.nanoTime() - capabilityCheckedAt < 2_000_000_000L) return;
+        synchronized (this) {
+            if (capability != null && System.nanoTime() - capabilityCheckedAt < 2_000_000_000L) return;
+            Capability observed;
+            try {
+                observed = client.get().uri("/internal/inventory/capabilities").retrieve()
+                        .body(new ParameterizedTypeReference<Result<Capability>>() { }).data();
+            } catch (RuntimeException failure) {
+                capability = null;
+                throw new InventoryServiceCallException(Reason.UNAVAILABLE, "库存能力探测失败，请稍后使用原编号重试", failure);
+            }
+            if (observed == null || observed.protocolVersion() != 1 || observed.stockAdmission() != enabled
+                    || (enabled && !observed.selectedSeats())) {
+                capability = null;
+                throw new InventoryServiceCallException(Reason.UNAVAILABLE,
+                        "Order与Inventory库存准入配置或协议不一致，请核对ticket.stock-admission.enabled");
+            }
+            capability = observed;
+            capabilityCheckedAt = System.nanoTime();
+        }
+    }
     /** 新请求采用建议到期时间，重试以库存服务返回的首次到期时间为准。 */
     public Admission hold(StockReservationRequest request){return call(request,"");}
     /** 仅明确没有正式预留时取消；库存服务的墓碑会防止迟到请求重新扣票。 */

@@ -83,6 +83,7 @@ public class OrderServiceImpl implements OrderService {
         validateCreate(userId, request);
         TicketOrder existing = PerformanceSpan.measure("idempotency.lookup",()->orders.selectByRequest(userId, request.idempotencyKey()));
         if (existing != null) { return repeat(existing, request); }
+        admissions.requireCompatible();
         var rule = PerformanceSpan.measure("event.http",()->eventCallGuard.getPurchaseRule(request.ticketTierId()));
         LocalDateTime now = LocalDateTime.now(clock).truncatedTo(ChronoUnit.MILLIS);
         rules.checkRequest(request.quantity(),rule,now);
