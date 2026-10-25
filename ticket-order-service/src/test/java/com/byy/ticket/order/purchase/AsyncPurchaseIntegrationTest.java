@@ -85,6 +85,8 @@ class AsyncPurchaseIntegrationTest {
     @Test @EnabledIfSystemProperty(named="ticket.test.rabbitmq",matches="true")
     void realBrokerConfirmFailureRecoveryAndDuplicateConsumption()throws Exception{
         var connection=new org.springframework.amqp.rabbit.connection.CachingConnectionFactory("127.0.0.1",Integer.getInteger("ticket.test.rabbitmq.port",15673));
+        connection.setUsername(System.getenv().getOrDefault("TICKET_TEST_RABBITMQ_USER", "guest"));
+        connection.setPassword(System.getenv().getOrDefault("TICKET_TEST_RABBITMQ_PASSWORD", "guest"));
         connection.setPublisherConfirmType(org.springframework.amqp.rabbit.connection.CachingConnectionFactory.ConfirmType.CORRELATED);connection.setPublisherReturns(true);
         var rabbit=new org.springframework.amqp.rabbit.core.RabbitTemplate(connection);rabbit.setMandatory(true);
         var admin=new org.springframework.amqp.rabbit.core.RabbitAdmin(connection);String prefix="ticket-test-"+java.util.UUID.randomUUID();

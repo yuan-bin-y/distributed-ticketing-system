@@ -1,0 +1,53 @@
+name: Verify
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test-only-password
+        ports: ['3306:3306']
+        options: --health-cmd="mysqladmin ping -h 127.0.0.1 --silent" --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:7.4-alpine
+        ports: ['6379:6379']
+        options: --health-cmd="redis-cli ping" --health-interval=5s --health-timeout=3s --health-retries=20
+      rabbitmq:
+        image: rabbitmq:4.3.6-management
+        env:
+          RABBITMQ_DEFAULT_USER: ticket-test
+          RABBITMQ_DEFAULT_PASS: test-only-password
+        ports: ['5672:5672']
+        options: --health-cmd="rabbitmq-diagnostics -q ping" --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      LOCAL_MYSQL_USERNAME: root
+      LOCAL_MYSQL_PASSWORD: test-only-password
+      TICKET_TEST_MYSQL_BASE: jdbc:mysql://127.0.0.1:3306/
+      TICKET_TEST_RABBITMQ_USER: ticket-test
+      TICKET_TEST_RABBITMQ_PASSWORD: test-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - name: Build and verify
+        run: ./mvnw -B -ntp -Pintegration verify -Dticket.test.redis.port=6379 -Dticket.test.rabbitmq.port=5672
+      - name: Require integration execution
+        run: pwsh -NoProfile -File deploy/tests/check-reports.ps1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-reports
+          path: |
+            **/target/surefire-reports/*.xml
+            **/target/site/jacoco/**
+          retention-days: 7

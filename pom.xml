@@ -39,6 +39,13 @@
         <mybatis-plus.version>3.5.17</mybatis-plus.version>
         <resilience4j.version>2.4.0</resilience4j.version>
         <drools.version>10.1.0</drools.version>
+        <argLine></argLine>
+        <ticket.test.mysql>false</ticket.test.mysql>
+        <ticket.test.redis>false</ticket.test.redis>
+        <ticket.test.prehold>false</ticket.test.prehold>
+        <ticket.test.rabbitmq>false</ticket.test.rabbitmq>
+        <ticket.test.redis.port>16379</ticket.test.redis.port>
+        <ticket.test.rabbitmq.port>15673</ticket.test.rabbitmq.port>
     </properties>
 
     <build><plugins><plugin>
@@ -49,7 +56,43 @@
                 <requireMavenVersion><version>[3.9,4)</version><message>请使用项目Maven Wrapper或Maven 3.9。</message></requireMavenVersion>
             </rules></configuration>
         </execution></executions>
-    </plugin></plugins></build>
+    </plugin>
+    <plugin>
+        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-dependency-plugin</artifactId>
+        <executions><execution><id>test-agent-path</id><phase>initialize</phase><goals><goal>properties</goal></goals></execution></executions>
+    </plugin>
+    <plugin>
+        <groupId>org.apache.maven.plugins</groupId><artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+            <argLine>@{argLine} -javaagent:"${org.mockito:mockito-core:jar}" -Dfile.encoding=UTF-8</argLine>
+            <systemPropertyVariables>
+                <ticket.test.mysql>${ticket.test.mysql}</ticket.test.mysql>
+                <ticket.test.redis>${ticket.test.redis}</ticket.test.redis>
+                <ticket.test.prehold>${ticket.test.prehold}</ticket.test.prehold>
+                <ticket.test.rabbitmq>${ticket.test.rabbitmq}</ticket.test.rabbitmq>
+                <ticket.test.redis.port>${ticket.test.redis.port}</ticket.test.redis.port>
+                <ticket.test.rabbitmq.port>${ticket.test.rabbitmq.port}</ticket.test.rabbitmq.port>
+            </systemPropertyVariables>
+        </configuration>
+    </plugin>
+    <plugin>
+        <groupId>org.jacoco</groupId><artifactId>jacoco-maven-plugin</artifactId><version>0.8.13</version>
+        <executions>
+            <execution><id>coverage</id><goals><goal>prepare-agent</goal></goals></execution>
+            <execution><id>report</id><phase>verify</phase><goals><goal>report</goal></goals></execution>
+        </executions>
+    </plugin>
+    </plugins></build>
+
+    <dependencies>
+        <!-- 测试显式加载Mockito agent，避免依赖运行时自附加权限。 -->
+        <dependency><groupId>org.mockito</groupId><artifactId>mockito-core</artifactId><scope>test</scope></dependency>
+    </dependencies>
+
+    <profiles><profile><id>integration</id><properties>
+        <ticket.test.mysql>true</ticket.test.mysql><ticket.test.redis>true</ticket.test.redis>
+        <ticket.test.prehold>true</ticket.test.prehold><ticket.test.rabbitmq>true</ticket.test.rabbitmq>
+    </properties></profile></profiles>
 
     <!-- 导入版本清单；子模块仍须在自己的 dependencies 中引入所需组件。 -->
     <dependencyManagement>

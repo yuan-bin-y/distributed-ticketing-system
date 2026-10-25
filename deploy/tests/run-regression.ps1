@@ -11,7 +11,7 @@ $original=@{}
 Push-Location $script:TicketProjectRoot
 try {
     $env:JAVA_HOME=$JdkHome
-    $arguments=@('-B','-pl','ticket-payment-service,ticket-order-service,ticket-inventory-service,ticket-gateway,ticket-event-service','-am','test')
+    $arguments=@('-B','-ntp','verify')
     if($Integration) {
         if($MySqlBase){
             $original['TICKET_TEST_MYSQL_BASE']=$env:TICKET_TEST_MYSQL_BASE
@@ -29,6 +29,9 @@ try {
     if($RabbitMQ){$arguments+='-Dticket.test.rabbitmq=true';$arguments+="-Dticket.test.rabbitmq.port=$RabbitMqPort"}
     & (Join-Path $script:TicketProjectRoot 'mvnw.cmd') @arguments
     if($LASTEXITCODE -ne 0){throw '自动回归失败；查看各模块target/surefire-reports。'}
+    if($Integration -and $Redis -and $RabbitMQ) {
+        & (Join-Path $PSScriptRoot 'check-reports.ps1')
+    }
 } finally {
     $env:JAVA_HOME=$previousJava
     foreach($name in $original.Keys){[Environment]::SetEnvironmentVariable($name,$original[$name],'Process')}

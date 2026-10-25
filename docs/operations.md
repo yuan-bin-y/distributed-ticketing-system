@@ -301,3 +301,11 @@ Redis 重建只装载有效 HELD 请求和可用座位，临时哈希每批写�
 `APPLIED` 只有原预留已为SOLD才能归档；RESERVED和HELD记录继续保留。
 归档表 `t_stock_admission_receipt` 保留原请求、参数和终态，取消墓碑不会随Redis重建丢失。
 归档凭据属于历史业务资料，当前不自动删除；可观察 `ticket_inventory_prehold_archived_total`。
+
+## 自动回归
+
+使用 JDK 17，执行 `./mvnw verify` 运行单元测试；完整回归先准备独立 MySQL、Redis、RabbitMQ，再执行 `./mvnw -Pintegration verify` 和 `./deploy/tests/check-reports.ps1`。数据库使用随机名称，测试结束删除；不要使用生产数据库账号。
+
+完整测试读取 `LOCAL_MYSQL_USERNAME`、`LOCAL_MYSQL_PASSWORD`、`TICKET_TEST_MYSQL_BASE`（默认本机3306）；Redis、RabbitMQ默认16379、15673，可用 `-Dticket.test.redis.port=6379 -Dticket.test.rabbitmq.port=5672` 修改。RabbitMQ测试账号可用 `TICKET_TEST_RABBITMQ_USER`、`TICKET_TEST_RABBITMQ_PASSWORD` 指定。
+
+GitHub Actions使用独立服务运行完整集成 profile，检查关键测试未跳过，并保存 Surefire/JaCoCo 报告。普通 `mvn test` 会跳过需要外部依赖的测试，不能替代完整门禁。Windows可运行 `deploy/tests/run-regression.ps1 -Integration -Redis -RabbitMQ`；脚本使用项目 Wrapper。
